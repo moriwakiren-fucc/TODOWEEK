@@ -326,7 +326,7 @@ function renderOverdue() {
     document.getElementById('overdue-toggle').textContent = '▼ 閉じる';
   } else {
     sec.classList.add('collapsed');
-    document.getElementById('overdue-toggle').textContent = '▶ 開く';
+    document.getElementById('overdue-toggle').textContent = '▲ 開く';
   }
   od.sort((a,b)=>a.date<b.date?-1:1);
   const list = document.getElementById('overdue-list');
