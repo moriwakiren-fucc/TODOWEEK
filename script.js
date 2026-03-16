@@ -1,4 +1,3 @@
-// script.js
 // ── FIXED CONFIG ──
 const WORKER_URL = 'https://todoweek-api.moriwakiren-fucc.workers.dev';
 const CFG_KEY    = 'todoweek_config_v1';
@@ -166,7 +165,6 @@ async function registerServiceWorker() {
     const reg = await navigator.serviceWorker.register(swUrl, { scope: scopeUrl });
     return reg;
   } catch(e) { console.error('SW registration failed:', e); return null; }
-}
 }
 
 async function getVapidPublicKey() {
