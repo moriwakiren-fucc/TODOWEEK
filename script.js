@@ -188,7 +188,10 @@ async function subscribeNotification() {
   if (!reg) { showToast('Service Workerが使えません'); return; }
 
   const vapidKey = await getVapidPublicKey();
-  if (!vapidKey) { showToast('サーバーとの通信に失敗しました'); return; }
+  if (!vapidKey) {
+    showDebugMsg('❌ VAPIDキー取得失敗\nWorker URLに /vapidPublicKey へアクセスできませんでした。\nWorkerが正しくデプロイされているか確認してください。');
+    return;
+  }
 
   try {
     const sub = await reg.pushManager.subscribe({
@@ -196,17 +199,20 @@ async function subscribeNotification() {
       applicationServerKey: urlBase64ToUint8Array(vapidKey),
     });
     // サーバーに購読情報を送信
-    await fetch(`${WORKER_URL}/subscribe/${config.userId}`, {
+    const postRes = await fetch(`${WORKER_URL}/subscribe/${config.userId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sub.toJSON()),
     });
+    if (!postRes.ok) {
+      showDebugMsg(`❌ 購読情報の送信失敗\nHTTP ${postRes.status}\nSUBS_KVのバインドを確認してください。`);
+      return;
+    }
     localStorage.setItem('todoweek_sub', JSON.stringify(sub.toJSON()));
     updateNotifUI();
     showToast('通知を許可しました 🔔');
   } catch(e) {
-    console.error('Subscribe failed:', e);
-    showToast('通知の設定に失敗しました');
+    showDebugMsg(`❌ Subscribe失敗\n${e.name}: ${e.message}`);
   }
 }
 
@@ -603,6 +609,17 @@ function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function showDebugMsg(msg) {
+  // 設定画面が開いていればそこに表示、なければalert
+  const box = document.getElementById('debug-msg');
+  if (box) {
+    box.textContent = msg;
+    box.style.display = 'block';
+  } else {
+    alert(msg);
+  }
 }
 
 // ── INIT ──
