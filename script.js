@@ -425,6 +425,10 @@ document.getElementById('setup-save').addEventListener('click', async () => {
   showToast('同期を開始しました ✓');
 });
 
+document.getElementById('setup-uid').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('setup-save').click();
+});
+
 document.getElementById('setup-skip').addEventListener('click', () => {
   document.getElementById('setup-overlay').classList.remove('open');
   setSyncUI('', 'ローカルのみ');
