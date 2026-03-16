@@ -10,6 +10,7 @@
   <title>TodoWeek</title>
   <link rel="icon" href="favicon.ico">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -37,7 +38,6 @@
         <tr id="date-row"></tr>
       </thead>
     </table>
-    <!-- 各列の縦スクロール可能ボディ -->
     <div id="columns-wrap"></div>
   </div>
 
@@ -66,7 +66,6 @@
       <input class="form-input" id="f-title" type="text" placeholder="例: 数学の宿題提出">
     </div>
 
-    <!-- 日付欄：編集時のみ表示 -->
     <div class="form-group" id="f-date-group" style="display:none;">
       <label class="form-label">日付（期限）</label>
       <input class="form-input" id="f-date" type="date">
@@ -111,8 +110,6 @@
     <div class="form-group" id="format-group">
       <label class="form-label">書式</label>
       <div class="format-section">
-
-        <!-- 太字・下線・二重下線 -->
         <div class="format-row" id="format-style-row">
           <button type="button" class="fmt-btn" id="fmt-bold"
                   onclick="toggleFmt('bold')" title="太字">
@@ -127,19 +124,13 @@
             <span style="text-decoration:underline double;">U</span>
           </button>
         </div>
-
-        <!-- 文字色 -->
         <div class="format-label-small">文字色</div>
         <div class="color-picker-row" id="color-fg-row"></div>
-
-        <!-- 背景色 -->
         <div class="format-label-small">背景色</div>
         <div class="color-picker-row" id="color-bg-row"></div>
-
       </div>
     </div>
 
-    <!-- プレビュー -->
     <div class="form-group">
       <label class="form-label">プレビュー</label>
       <div id="format-preview" class="format-preview">テキスト</div>
@@ -169,6 +160,18 @@
 
     <button id="setup-save" tabindex="2">保存して同期開始</button>
     <p id="setup-hint">英数字・ハイフン・アンダーバーのみ使えます。<br>他の人と同じIDにすると共有されます。</p>
+
+    <!-- 通知設定 -->
+    <div id="notif-section">
+      <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
+      <div class="setup-notif-row">
+        <div>
+          <div class="setup-notif-title">🔔 リマインド通知</div>
+          <div id="notif-status-text" class="setup-notif-sub">未設定</div>
+        </div>
+        <button id="notif-btn" class="btn-notif">許可する</button>
+      </div>
+    </div>
 
     <button id="setup-logout" tabindex="3">ログアウト（このデバイスのデータを削除）</button>
     <button id="setup-skip" tabindex="4">スキップ（このデバイスのみで使う）</button>
