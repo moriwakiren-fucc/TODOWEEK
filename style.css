@@ -216,6 +216,7 @@ tbody td.today-col {
   cursor: pointer;
   transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
   animation: slideIn 0.18s ease;
+  min-width: 0;
 }
 @keyframes slideIn {
   from { opacity:0; transform:translateY(-5px); }
@@ -257,9 +258,17 @@ tbody td.today-col {
 .task-label {
   font-size: 14px;
   line-height: 1.45;
-  word-break: break-all;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  min-width: 0;
   flex: 1;
   color: var(--text);
+}
+.task-label > div:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .task-item.done .task-label {
   color: var(--done-text);
@@ -531,6 +540,36 @@ tbody td.today-col {
   font-family: 'Noto Sans JP', sans-serif;
 }
 #setup-skip:hover { color: var(--text2); }
+
+#setup-logout {
+  width: 100%;
+  background: #fff0f3;
+  color: var(--accent2);
+  border: 1.5px solid #ffc8d6;
+  border-radius: 12px;
+  font-size: 16px; font-weight: 700;
+  font-family: 'Noto Sans JP', sans-serif;
+  padding: 13px;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: background 0.15s;
+}
+#setup-logout:hover  { background: #ffe0e8; }
+#setup-logout:active { background: #ffc8d6; }
+
+.setup-current-user {
+  font-size: 13px;
+  color: var(--text2);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.setup-current-user strong { color: var(--accent); font-size: 15px; }
 
 /* ── SUBJECT TAGS ── */
 .subj-国語   { background: #f3eaff; color: #8b44cc; }
