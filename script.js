@@ -231,6 +231,15 @@ function deleteTask() {
 // ── SETUP MODAL ──
 function showSetup() {
   document.getElementById('setup-uid').value = config.userId || '';
+  // ログイン中ユーザーの表示
+  const wrap = document.getElementById('setup-current-user-wrap');
+  const uidLabel = document.getElementById('setup-current-uid');
+  if (config.userId) {
+    uidLabel.textContent = config.userId;
+    wrap.style.display = 'flex';
+  } else {
+    wrap.style.display = 'none';
+  }
   document.getElementById('setup-overlay').classList.add('open');
 }
 
@@ -247,6 +256,19 @@ document.getElementById('setup-save').addEventListener('click', async () => {
 document.getElementById('setup-skip').addEventListener('click', () => {
   document.getElementById('setup-overlay').classList.remove('open');
   setSyncUI('', 'ローカルのみ');
+});
+
+document.getElementById('setup-logout').addEventListener('click', () => {
+  if (!confirm('ログアウトしますか？\nこのデバイスのデータは削除されます。')) return;
+  config = {};
+  tasks  = [];
+  localStorage.removeItem(CFG_KEY);
+  localStorage.removeItem(TASKS_KEY);
+  document.getElementById('setup-overlay').classList.remove('open');
+  setSyncUI('', '未設定');
+  render();
+  showToast('ログアウトしました');
+  setTimeout(showSetup, 400);
 });
 
 // ── HEADER EVENTS ──
