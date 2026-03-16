@@ -16,10 +16,10 @@ self.addEventListener('push', e => {
   e.waitUntil(
     self.registration.showNotification(data.title, {
       body:    data.body,
-      icon:    '/apple-touch-icon.png',
-      badge:   '/apple-touch-icon.png',
+      icon:    'apple-touch-icon.png',
+      badge:   'apple-touch-icon.png',
       tag:     data.tag || 'todoweek-remind',
-      data:    { url: self.location.origin },
+      data:    { url: self.registration.scope },
     })
   );
 });
@@ -27,7 +27,7 @@ self.addEventListener('push', e => {
 // 通知タップで画面を開く
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  const url = (e.notification.data && e.notification.data.url) || self.location.origin;
+  const url = (e.notification.data && e.notification.data.url) || self.registration.scope;
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {
