@@ -98,6 +98,9 @@
 <div id="setup-overlay">
   <div id="setup-box">
     <h2>👤 ユーザーID設定</h2>
+    <div id="setup-current-user-wrap" class="setup-current-user" style="display:none">
+      ログイン中: <strong id="setup-current-uid"></strong>
+    </div>
     <p>自分だけのIDを決めてください。同じIDを使えばスマホ・iPad・PCどの端末からでもデータが共有されます。</p>
     <div class="setup-field">
       <label>ユーザーID</label>
@@ -113,6 +116,7 @@
     <button id="setup-save">保存して同期開始</button>
     <p id="setup-hint">英数字・ハイフン・アンダーバーのみ使えます。<br>他の人と同じIDにすると共有されます。</p>
     <button id="setup-skip">スキップ（このデバイスのみで使う）</button>
+    <button id="setup-logout">ログアウト（IDをリセット）</button>
   </div>
 </div>
 
