@@ -20,10 +20,6 @@
   <!-- ── HEADER ── -->
   <header>
     <div class="logo" id="logo-btn">Todo<span>Week</span></div>
-    <div id="global-input-row">
-      <input id="global-input" type="text" placeholder="タスクを素早く追加…">
-      <button id="global-add-btn">＋</button>
-    </div>
     <div id="sync-status" title="タップして設定">
       <div id="sync-dot"></div>
       <span id="sync-label">未設定</span>
@@ -40,6 +36,15 @@
       </thead>
       <tbody id="task-body"></tbody>
     </table>
+  </div>
+
+  <!-- ── OVERDUE SECTION ── -->
+  <div id="overdue-section">
+    <div id="overdue-header">
+      <span id="overdue-title">⚠️ 未達成の過去タスク</span>
+      <button id="overdue-toggle">▲ 閉じる</button>
+    </div>
+    <div id="overdue-list"></div>
   </div>
 
 </div><!-- /#app -->
@@ -66,8 +71,9 @@
     <div class="form-group">
       <label class="form-label">リマインド</label>
       <select class="form-select" id="f-remind">
+        <option value="0" selected>なし</option>
         <option value="1">1日前</option>
-        <option value="2" selected>2日前</option>
+        <option value="2">2日前</option>
         <option value="3">3日前</option>
         <option value="5">5日前</option>
         <option value="7">7日前</option>
@@ -79,7 +85,7 @@
 
     <div class="form-group">
       <label class="form-label">教科</label>
-      <select class="form-select" id="f-subject">
+      <select class="form-select" id="f-subject" onchange="handleSubjectChange(this.value)">
         <option value="なし" selected>なし</option>
         <option value="国語">国語</option>
         <option value="数学">数学</option>
@@ -88,8 +94,13 @@
         <option value="生物">生物</option>
         <option value="日本史">日本史</option>
         <option value="情報">情報</option>
-        <option value="カスタム">カスタム</option>
+        <option value="カスタム">カスタム（自由入力）</option>
       </select>
+    </div>
+
+    <div class="form-group" id="custom-subject-group" style="display:none;">
+      <label class="form-label">カスタム教科名</label>
+      <input class="form-input" id="f-custom-subject" type="text" placeholder="例: 物理、体育、音楽…">
     </div>
 
     <div class="modal-actions" id="modal-actions"></div>
@@ -103,7 +114,6 @@
     <h2>👤 ユーザーID設定</h2>
     <p>自分だけのIDを決めてください。同じIDを使えばスマホ・iPad・PCどの端末からでもデータが共有されます。</p>
 
-    <!-- ログイン中の場合に表示 -->
     <div id="setup-current-user-wrap">
       <span class="label">ログイン中：</span>
       <span id="setup-current-uid"></span>
@@ -111,23 +121,14 @@
 
     <div class="setup-field">
       <label>ユーザーID（変更する場合）</label>
-      <input
-        type="text"
-        id="setup-uid"
-        placeholder="例: taro2025"
-        autocomplete="off"
-        autocapitalize="off"
-        spellcheck="false"
-      >
+      <input type="text" id="setup-uid" placeholder="例: taro2025"
+        autocomplete="off" autocapitalize="off" spellcheck="false">
     </div>
 
     <button id="setup-save">保存して同期開始</button>
     <p id="setup-hint">英数字・ハイフン・アンダーバーのみ使えます。<br>他の人と同じIDにすると共有されます。</p>
 
-    <!-- ログアウトボタン（ログイン中のみ表示） -->
     <button id="setup-logout">ログアウト（このデバイスのデータを削除）</button>
-
-    <!-- 未ログイン時のスキップ -->
     <button id="setup-skip">スキップ（このデバイスのみで使う）</button>
   </div>
 </div>
