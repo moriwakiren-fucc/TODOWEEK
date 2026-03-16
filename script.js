@@ -1,3 +1,4 @@
+// script.js
 // ── FIXED CONFIG ──
 const WORKER_URL = 'https://todoweek-api.moriwakiren-fucc.workers.dev';
 const CFG_KEY    = 'todoweek_config_v1';
