@@ -26,23 +26,24 @@
     </div>
   </header>
 
-  <!-- ── TABLE ── -->
-  <div id="table-wrap">
+  <!-- ── MAIN TABLE ── -->
+  <div id="table-outer">
     <table id="main-table">
       <colgroup id="cols"></colgroup>
       <thead>
         <tr id="goal-row"></tr>
         <tr id="date-row"></tr>
       </thead>
-      <tbody id="task-body"></tbody>
     </table>
+    <!-- 各列の縦スクロール可能ボディ -->
+    <div id="columns-wrap"></div>
   </div>
 
   <!-- ── OVERDUE SECTION ── -->
-  <div id="overdue-section">
+  <div id="overdue-section" class="hidden">
     <div id="overdue-header">
       <span id="overdue-title">⚠️ 未達成の過去タスク</span>
-      <button id="overdue-toggle">▲ 閉じる</button>
+      <button id="overdue-toggle">▼ 閉じる</button>
     </div>
     <div id="overdue-list"></div>
   </div>
@@ -63,7 +64,8 @@
       <input class="form-input" id="f-title" type="text" placeholder="例: 数学の宿題提出">
     </div>
 
-    <div class="form-group">
+    <!-- 日付欄：編集時のみ表示 -->
+    <div class="form-group" id="f-date-group" style="display:none;">
       <label class="form-label">日付（期限）</label>
       <input class="form-input" id="f-date" type="date">
     </div>
@@ -103,6 +105,44 @@
       <input class="form-input" id="f-custom-subject" type="text" placeholder="例: 物理、体育、音楽…">
     </div>
 
+    <!-- 書式 -->
+    <div class="form-group" id="format-group">
+      <label class="form-label">書式</label>
+      <div class="format-section">
+
+        <!-- 太字・下線・二重下線 -->
+        <div class="format-row" id="format-style-row">
+          <button type="button" class="fmt-btn" id="fmt-bold"
+                  onclick="toggleFmt('bold')" title="太字">
+            <strong>B</strong>
+          </button>
+          <button type="button" class="fmt-btn" id="fmt-underline"
+                  onclick="toggleFmt('underline')" title="下線">
+            <span style="text-decoration:underline;">U</span>
+          </button>
+          <button type="button" class="fmt-btn" id="fmt-double-underline"
+                  onclick="toggleFmt('double-underline')" title="二重下線">
+            <span style="text-decoration:underline double;">U</span>
+          </button>
+        </div>
+
+        <!-- 文字色 -->
+        <div class="format-label-small">文字色</div>
+        <div class="color-picker-row" id="color-fg-row"></div>
+
+        <!-- 背景色 -->
+        <div class="format-label-small">背景色</div>
+        <div class="color-picker-row" id="color-bg-row"></div>
+
+      </div>
+    </div>
+
+    <!-- プレビュー -->
+    <div class="form-group">
+      <label class="form-label">プレビュー</label>
+      <div id="format-preview" class="format-preview">テキスト</div>
+    </div>
+
     <div class="modal-actions" id="modal-actions"></div>
   </div>
 </div>
@@ -122,14 +162,14 @@
     <div class="setup-field">
       <label>ユーザーID（変更する場合）</label>
       <input type="text" id="setup-uid" placeholder="例: taro2025"
-        autocomplete="off" autocapitalize="off" spellcheck="false">
+        autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="1">
     </div>
 
-    <button id="setup-save">保存して同期開始</button>
+    <button id="setup-save" tabindex="2">保存して同期開始</button>
     <p id="setup-hint">英数字・ハイフン・アンダーバーのみ使えます。<br>他の人と同じIDにすると共有されます。</p>
 
-    <button id="setup-logout">ログアウト（このデバイスのデータを削除）</button>
-    <button id="setup-skip">スキップ（このデバイスのみで使う）</button>
+    <button id="setup-logout" tabindex="3">ログアウト（このデバイスのデータを削除）</button>
+    <button id="setup-skip" tabindex="4">スキップ（このデバイスのみで使う）</button>
   </div>
 </div>
 
