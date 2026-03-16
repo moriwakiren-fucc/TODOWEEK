@@ -191,21 +191,27 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function subscribeNotification() {
+  alert('subscribe開始');
   if (!config.userId) { showToast('先にユーザーIDを設定してください'); return; }
+  alert('userId OK: ' + config.userId);
   const reg = await registerServiceWorker();
+  alert('SW登録結果: ' + (reg ? 'OK scope=' + reg.scope : 'null'));
   if (!reg) { showToast('Service Workerが使えません'); return; }
 
   const vapidKey = await getVapidPublicKey();
+  alert('VAPIDキー取得: ' + (vapidKey ? vapidKey.slice(0,20)+'...' : 'null'));
   if (!vapidKey) {
     showDebugMsg('❌ VAPIDキー取得失敗\nWorker URLに /vapidPublicKey へアクセスできませんでした。\nWorkerが正しくデプロイされているか確認してください。');
     return;
   }
 
   try {
+    alert('pushManager.subscribe 呼び出し直前');
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly:      true,
       applicationServerKey: urlBase64ToUint8Array(vapidKey),
     });
+    alert('subscribe成功！endpoint=' + sub.endpoint.slice(0,40));
     // サーバーに購読情報を送信
     const postRes = await fetch(`${WORKER_URL}/subscribe/${config.userId}`, {
       method: 'POST',
