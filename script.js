@@ -246,6 +246,7 @@ async function unsubscribeNotification() {
 
 // ボタンから直接呼ばれる（非同期タイミング問題を回避）
 window.handleNotifBtn = async function() {
+  alert('ボタンが押されました。state=' + (document.getElementById('notif-btn').dataset.state || '未設定'));
   const btn = document.getElementById('notif-btn');
   // 現在の状態を見て購読 or 解除
   if (btn.dataset.state === 'subscribed') {
