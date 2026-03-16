@@ -161,15 +161,14 @@
     <button id="setup-save" tabindex="2">保存して同期開始</button>
     <p id="setup-hint">英数字・ハイフン・アンダーバーのみ使えます。<br>他の人と同じIDにすると共有されます。</p>
 
-    <!-- 通知設定 -->
-    <div id="notif-section">
+      <div id="notif-section">
       <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
       <div class="setup-notif-row">
         <div>
           <div class="setup-notif-title">🔔 リマインド通知</div>
-          <div id="notif-status-text" class="setup-notif-sub">未設定</div>
+          <div id="notif-status-text" class="setup-notif-sub">確認中…</div>
         </div>
-        <button id="notif-btn" class="btn-notif">許可する</button>
+        <button id="notif-btn" class="btn-notif" onclick="handleNotifBtn()">許可する</button>
       </div>
       <div id="debug-msg" style="display:none;margin-top:12px;background:#fff0f0;border:1px solid #ffaaaa;border-radius:8px;padding:10px 12px;font-size:12px;color:#cc2222;white-space:pre-wrap;word-break:break-all;font-family:monospace;"></div>
     </div>
