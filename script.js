@@ -20,7 +20,7 @@ const SUBJECT_COLORS = {
   '国語':   { bg: '#ffeaea', fg: '#cc2222', border: '#ffb3b3' },
   '数学':   { bg: '#e8f0ff', fg: '#1a44cc', border: '#b3c8ff' },
   '英語':   { bg: '#fffbe0', fg: '#998800', border: '#ffe680' },
-  '化学':   { bg: '#fffbe0', fg: '#998800', border: '#ffe680' },
+  '化学':   { bg: '#eafff0', fg: '#1a8840', border: '#b3eec8' },
   '生物':   { bg: '#eafff0', fg: '#1a8840', border: '#b3eec8' },
   '日本史': { bg: '#f5eaff', fg: '#7722cc', border: '#ddb3ff' },
   '情報':   { bg: '#e0faff', fg: '#0088aa', border: '#b3eeff' },
@@ -128,6 +128,48 @@ function saveGoal(val) {
   localStorage.setItem(getGoalKey(), val);
 }
 
+// ── 日本の祝日（固定＋主要移動祝日 2024-2030） ──
+const HOLIDAYS = new Set([
+  // 元日
+  '2024-01-01','2025-01-01','2026-01-01','2027-01-01','2028-01-01','2029-01-01','2030-01-01',
+  // 成人の日（1月第2月曜）
+  '2024-01-08','2025-01-13','2026-01-12','2027-01-11','2028-01-10','2029-01-08','2030-01-14',
+  // 建国記念の日
+  '2024-02-11','2025-02-11','2026-02-11','2027-02-11','2028-02-11','2029-02-11','2030-02-11',
+  // 天皇誕生日
+  '2024-02-23','2025-02-23','2026-02-23','2027-02-23','2028-02-23','2029-02-23','2030-02-23',
+  // 春分の日（概算）
+  '2024-03-20','2025-03-20','2026-03-20','2027-03-21','2028-03-20','2029-03-20','2030-03-20',
+  // 昭和の日
+  '2024-04-29','2025-04-29','2026-04-29','2027-04-29','2028-04-29','2029-04-29','2030-04-29',
+  // 憲法記念日
+  '2024-05-03','2025-05-03','2026-05-03','2027-05-03','2028-05-03','2029-05-03','2030-05-03',
+  // みどりの日
+  '2024-05-04','2025-05-04','2026-05-04','2027-05-04','2028-05-04','2029-05-04','2030-05-04',
+  // こどもの日
+  '2024-05-05','2025-05-05','2026-05-05','2027-05-05','2028-05-05','2029-05-05','2030-05-05',
+  // 振替休日など（代表的なもの）
+  '2025-05-06',
+  // 海の日（7月第3月曜）
+  '2024-07-15','2025-07-21','2026-07-20','2027-07-19','2028-07-17','2029-07-16','2030-07-15',
+  // 山の日
+  '2024-08-11','2025-08-11','2026-08-11','2027-08-11','2028-08-11','2029-08-11','2030-08-11',
+  // 敬老の日（9月第3月曜）
+  '2024-09-16','2025-09-15','2026-09-21','2027-09-20','2028-09-18','2029-09-17','2030-09-16',
+  // 秋分の日（概算）
+  '2024-09-22','2025-09-23','2026-09-23','2027-09-23','2028-09-22','2029-09-23','2030-09-23',
+  // スポーツの日（10月第2月曜）
+  '2024-10-14','2025-10-13','2026-10-12','2027-10-11','2028-10-09','2029-10-08','2030-10-14',
+  // 文化の日
+  '2024-11-03','2025-11-03','2026-11-03','2027-11-03','2028-11-03','2029-11-03','2030-11-03',
+  // 勤労感謝の日
+  '2024-11-23','2025-11-23','2026-11-23','2027-11-23','2028-11-23','2029-11-23','2030-11-23',
+]);
+
+function isHoliday(dateStr) {
+  return HOLIDAYS.has(dateStr);
+}
+
 // ── RENDER ──
 function render() {
   const dates   = getWeekDates(weekOffset);
@@ -172,11 +214,24 @@ function render() {
 
   // ── Date headers ──
   document.getElementById('date-row').innerHTML = dates.map((d, i) => {
-    const ds  = toDateStr(d);
-    const cls = ds === todayStr ? 'today-col' : '';
+    const ds    = toDateStr(d);
+    const dow   = d.getDay(); // 0=日, 6=土
+    const hol   = isHoliday(ds);
+    const isToday = ds === todayStr;
+
+    let cls = '';
+    if (isToday)       cls = 'today-col';
+    else if (hol)      cls = 'hol-col';
+    else if (dow === 0) cls = 'sun-col';
+    else if (dow === 6) cls = 'sat-col';
+
+    // 曜日表示：祝日は元の曜日＋祝マーク
+    let dowLabel = DAY[dow];
+    if (hol) dowLabel = DAY[dow] + '祝';
+
     return `<th class="${cls}">
       <span class="day-num">${d.getDate()}</span>
-      ${d.getMonth() + 1}/${d.getDate()}(${DAY[d.getDay()]})
+      ${d.getMonth() + 1}/${d.getDate()}(${dowLabel})
     </th>`;
   }).join('');
 
@@ -188,9 +243,13 @@ function render() {
   const row = document.createElement('tr');
 
   dates.forEach((d, ci) => {
-    const ds  = toDateStr(d);
-    const td  = document.createElement('td');
+    const ds    = toDateStr(d);
+    const dow   = d.getDay();
+    const hol   = isHoliday(ds);
+    const td    = document.createElement('td');
     if (ds === todayStr) td.classList.add('today-col');
+    else if (hol || dow === 0) td.classList.add('sun-col-bg');
+    else if (dow === 6) td.classList.add('sat-col-bg');
 
     cols7[ci].forEach(t => td.appendChild(makeTaskEl(t)));
 
