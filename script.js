@@ -167,11 +167,15 @@ async function registerServiceWorker() {
   } catch(e) { console.error('SW registration failed:', e); return null; }
 }
 
+// VAPIDキーを起動時にキャッシュ
+let cachedVapidKey = null;
 async function getVapidPublicKey() {
+  if (cachedVapidKey) return cachedVapidKey;
   try {
     const r = await fetch(`${WORKER_URL}/vapidPublicKey`);
     const d = await r.json();
-    return d.key;
+    cachedVapidKey = d.key || null;
+    return cachedVapidKey;
   } catch(e) { return null; }
 }
 
@@ -191,28 +195,21 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function subscribeNotification() {
-  alert('subscribe開始');
   if (!config.userId) { showToast('先にユーザーIDを設定してください'); return; }
-  alert('userId OK: ' + config.userId);
   const reg = await registerServiceWorker();
-  alert('SW登録結果: ' + (reg ? 'OK scope=' + reg.scope : 'null'));
   if (!reg) { showToast('Service Workerが使えません'); return; }
 
   const vapidKey = await getVapidPublicKey();
-  alert('VAPIDキー取得: ' + (vapidKey ? vapidKey.slice(0,20)+'...' : 'null'));
   if (!vapidKey) {
-    showDebugMsg('❌ VAPIDキー取得失敗\nWorker URLに /vapidPublicKey へアクセスできませんでした。\nWorkerが正しくデプロイされているか確認してください。');
+    showDebugMsg('❌ VAPIDキー取得失敗\nWorker URLに /vapidPublicKey へアクセスできませんでした。');
     return;
   }
 
   try {
-    alert('pushManager.subscribe 呼び出し直前');
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly:      true,
       applicationServerKey: urlBase64ToUint8Array(vapidKey),
     });
-    alert('subscribe成功！endpoint=' + sub.endpoint.slice(0,40));
-    // サーバーに購読情報を送信
     const postRes = await fetch(`${WORKER_URL}/subscribe/${config.userId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -226,7 +223,7 @@ async function subscribeNotification() {
     updateNotifUI();
     showToast('通知を許可しました 🔔');
   } catch(e) {
-    showDebugMsg(`❌ Subscribe失敗\n${e.name}: ${e.message}\n\nVAPID公開鍵の先頭: ${vapidKey ? vapidKey.slice(0,30)+'...' : 'null'}`);
+    showDebugMsg(`❌ Subscribe失敗\n${e.name}: ${e.message}`);
   }
 }
 
@@ -252,7 +249,6 @@ async function unsubscribeNotification() {
 
 // ボタンから直接呼ばれる（非同期タイミング問題を回避）
 window.handleNotifBtn = async function() {
-  alert('ボタンが押されました。state=' + (document.getElementById('notif-btn').dataset.state || '未設定'));
   const btn = document.getElementById('notif-btn');
   // 現在の状態を見て購読 or 解除
   if (btn.dataset.state === 'subscribed') {
@@ -656,6 +652,7 @@ function showDebugMsg(msg) {
 
 // ── INIT ──
 registerServiceWorker();
+getVapidPublicKey(); // 起動時にキャッシュしておく
 render();
 if (!config.userId) { showSetup(); } else { pullFromCloud(); }
 setInterval(() => { const n=new Date(); if(n.getHours()===0&&n.getMinutes()===0) render(); }, 60000);
