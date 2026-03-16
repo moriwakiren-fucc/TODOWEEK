@@ -1,5 +1,5 @@
 // ── FIXED CONFIG ──
-const WORKER_URL = 'https://todoweek-api.moriwakiren-fucc.workers.dev';
+const WORKER_URL = 'https://todoweek-api2.moriwakiren-fucc.workers.dev';
 const CFG_KEY    = 'todoweek_config_v1';
 const TASKS_KEY  = 'todoweek_tasks_v2';
 const GOAL_KEY   = 'todoweek_goal_v1';
