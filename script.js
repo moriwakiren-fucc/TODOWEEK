@@ -176,10 +176,18 @@ async function getVapidPublicKey() {
 }
 
 function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw     = atob(base64);
-  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  // 余分な空白・改行を除去
+  const cleaned = base64String.trim();
+  // Base64url → Base64 に変換
+  const base64  = cleaned.replace(/-/g, '+').replace(/_/g, '/');
+  // パディング補完
+  const padded  = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+  try {
+    const raw = atob(padded);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  } catch(e) {
+    throw new Error('VAPIDキーのBase64デコード失敗: ' + e.message + ' / key=' + base64String.slice(0,20) + '...');
+  }
 }
 
 async function subscribeNotification() {
@@ -212,7 +220,7 @@ async function subscribeNotification() {
     updateNotifUI();
     showToast('通知を許可しました 🔔');
   } catch(e) {
-    showDebugMsg(`❌ Subscribe失敗\n${e.name}: ${e.message}`);
+    showDebugMsg(`❌ Subscribe失敗\n${e.name}: ${e.message}\n\nVAPID公開鍵の先頭: ${vapidKey ? vapidKey.slice(0,30)+'...' : 'null'}`);
   }
 }
 
