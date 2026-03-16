@@ -159,9 +159,13 @@ function saveGoal(v) { localStorage.setItem(GOAL_KEY + '_' + weekOffset, v); }
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return null;
   try {
-    const reg = await navigator.serviceWorker.register('/sw.js');
+    // 相対パスで登録（サブディレクトリ対応）
+    const swUrl    = new URL('./sw.js', location.href).href;
+    const scopeUrl = new URL('./',      location.href).href;
+    const reg = await navigator.serviceWorker.register(swUrl, { scope: scopeUrl });
     return reg;
   } catch(e) { console.error('SW registration failed:', e); return null; }
+}
 }
 
 async function getVapidPublicKey() {
@@ -208,7 +212,8 @@ async function subscribeNotification() {
 }
 
 async function unsubscribeNotification() {
-  const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+  const swUrl = new URL('./sw.js', location.href).href;
+  const reg   = await navigator.serviceWorker.getRegistration(swUrl);
   if (!reg) return;
   const sub = await reg.pushManager.getSubscription();
   if (sub) {
@@ -241,7 +246,8 @@ async function updateNotifUI() {
   // SW の購読状態を確認
   let isSubscribed = false;
   try {
-    const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+    const swUrl = new URL('./sw.js', location.href).href;
+    const reg   = await navigator.serviceWorker.getRegistration(swUrl);
     if (reg) {
       const sub = await reg.pushManager.getSubscription();
       isSubscribed = !!sub;
