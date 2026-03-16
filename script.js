@@ -244,19 +244,36 @@ async function unsubscribeNotification() {
   showToast('通知を解除しました');
 }
 
+// ボタンから直接呼ばれる（非同期タイミング問題を回避）
+window.handleNotifBtn = async function() {
+  const btn = document.getElementById('notif-btn');
+  // 現在の状態を見て購読 or 解除
+  if (btn.dataset.state === 'subscribed') {
+    await unsubscribeNotification();
+  } else {
+    await subscribeNotification();
+  }
+};
+
 async function updateNotifUI() {
   const btn  = document.getElementById('notif-btn');
   const text = document.getElementById('notif-status-text');
+  if (!btn || !text) return;
+
   if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-    text.textContent = 'このブラウザでは通知を使えません';
-    btn.style.display = 'none'; return;
+    text.textContent  = 'このブラウザでは通知を使えません';
+    btn.style.display = 'none';
+    return;
   }
   const perm = Notification.permission;
   if (perm === 'denied') {
     text.textContent = '通知がブロックされています（設定から変更してください）';
-    btn.textContent = '許可できません'; btn.className = 'btn-notif denied'; return;
+    btn.textContent  = '許可できません';
+    btn.className    = 'btn-notif denied';
+    btn.dataset.state = 'denied';
+    return;
   }
-  // SW の購読状態を確認
+
   let isSubscribed = false;
   try {
     const swUrl = new URL('./sw.js', location.href).href;
@@ -268,15 +285,15 @@ async function updateNotifUI() {
   } catch(e) {}
 
   if (isSubscribed) {
-    text.textContent = '通知がオンです（毎日20:00に送信）';
-    btn.textContent  = '通知を解除する';
-    btn.className    = 'btn-notif granted';
-    btn.onclick      = unsubscribeNotification;
+    text.textContent  = '通知がオンです（毎日20:00に送信）';
+    btn.textContent   = '通知を解除する';
+    btn.className     = 'btn-notif granted';
+    btn.dataset.state = 'subscribed';
   } else {
-    text.textContent = '通知を許可するとリマインドが届きます';
-    btn.textContent  = '許可する';
-    btn.className    = 'btn-notif';
-    btn.onclick      = subscribeNotification;
+    text.textContent  = '通知を許可するとリマインドが届きます';
+    btn.textContent   = '許可する';
+    btn.className     = 'btn-notif';
+    btn.dataset.state = 'unsubscribed';
   }
 }
 
