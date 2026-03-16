@@ -231,15 +231,23 @@ function deleteTask() {
 // ── SETUP MODAL ──
 function showSetup() {
   document.getElementById('setup-uid').value = config.userId || '';
-  // ログイン中ユーザーの表示
-  const wrap = document.getElementById('setup-current-user-wrap');
-  const uidLabel = document.getElementById('setup-current-uid');
+
+  const wrap    = document.getElementById('setup-current-user-wrap');
+  const uidEl   = document.getElementById('setup-current-uid');
+  const btnSkip = document.getElementById('setup-skip');
+  const btnOut  = document.getElementById('setup-logout');
+
   if (config.userId) {
-    uidLabel.textContent = config.userId;
-    wrap.style.display = 'flex';
+    uidEl.textContent   = config.userId;
+    wrap.style.display  = 'flex';
+    btnOut.style.display = 'block';
+    btnSkip.style.display = 'none';
   } else {
-    wrap.style.display = 'none';
+    wrap.style.display   = 'none';
+    btnOut.style.display = 'none';
+    btnSkip.style.display = 'block';
   }
+
   document.getElementById('setup-overlay').classList.add('open');
 }
 
@@ -256,6 +264,32 @@ document.getElementById('setup-save').addEventListener('click', async () => {
 document.getElementById('setup-skip').addEventListener('click', () => {
   document.getElementById('setup-overlay').classList.remove('open');
   setSyncUI('', 'ローカルのみ');
+});
+
+document.getElementById('setup-logout').addEventListener('click', () => {
+  if (!confirm('ログアウトしますか？\nこのデバイスのローカルデータも消えます。')) return;
+  config = {};
+  localStorage.removeItem(CFG_KEY);
+  tasks = [];
+  localStorage.removeItem(TASKS_KEY);
+  document.getElementById('setup-overlay').classList.remove('open');
+  setSyncUI('', '未設定');
+  render();
+  showToast('ログアウトしました');
+  setTimeout(showSetup, 400);
+});
+
+document.getElementById('setup-logout').addEventListener('click', () => {
+  if (!confirm('ログアウトしますか？\nこのデバイスのデータは削除されます。')) return;
+  config = {};
+  tasks  = [];
+  localStorage.removeItem(CFG_KEY);
+  localStorage.removeItem(TASKS_KEY);
+  document.getElementById('setup-overlay').classList.remove('open');
+  setSyncUI('', '未設定');
+  render();
+  showToast('ログアウトしました');
+  setTimeout(showSetup, 400);
 });
 
 document.getElementById('setup-logout').addEventListener('click', () => {
