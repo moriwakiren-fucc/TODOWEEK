@@ -182,8 +182,6 @@ thead tr#date-row th.hol-col  .day-num { color: #cc2222; }
 }
 .col-body:first-child { border-left: 1px solid var(--border); }
 .col-body.today-col   { background: var(--today-bg); border-color: #f0c090; }
-.col-body.sun-col-bg  { background: #fff5f5; }
-.col-body.sat-col-bg  { background: #f5f5ff; }
 
 /* ── TASK ITEM ── */
 .task-item {
