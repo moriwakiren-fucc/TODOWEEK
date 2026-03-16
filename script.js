@@ -1,474 +1,622 @@
-// ── FIXED CONFIG ──
-const WORKER_URL = 'https://todoweek-api.moriwakiren-fucc.workers.dev';
-const CFG_KEY    = 'todoweek_config_v1';
-const TASKS_KEY  = 'todoweek_tasks_v2';
-const GOAL_KEY   = 'todoweek_goal_v1';
-
-// ── STATE ──
-let config = {};
-try { config = JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch(e) {}
-let tasks = [];
-try { tasks = JSON.parse(localStorage.getItem(TASKS_KEY)) || []; } catch(e) {}
-
-let syncTimer    = null;
-let editingId    = null;
-let weekOffset   = 0;   // 0=今週, -1=先週, 1=来週 …
-let overdueOpen  = true;
-
-// ── SUBJECT COLOR MAP ──
-const SUBJECT_COLORS = {
-  '国語':   { bg: '#ffeaea', fg: '#cc2222', border: '#ffb3b3' },
-  '数学':   { bg: '#e8f0ff', fg: '#1a44cc', border: '#b3c8ff' },
-  '英語':   { bg: '#fffbe0', fg: '#998800', border: '#ffe680' },
-  '化学':   { bg: '#fffbe0', fg: '#998800', border: '#ffe680' },
-  '生物':   { bg: '#eafff0', fg: '#1a8840', border: '#b3eec8' },
-  '日本史': { bg: '#f5eaff', fg: '#7722cc', border: '#ddb3ff' },
-  '情報':   { bg: '#e0faff', fg: '#0088aa', border: '#b3eeff' },
-};
-const CUSTOM_COLOR = { bg: '#ffeaf5', fg: '#cc2266', border: '#ffb3d9' };
-const DEFAULT_COLOR = { bg: '#f0f2f5', fg: '#6b7594', border: '#dde1ea' };
-
-function getColor(subject) {
-  if (!subject || subject === 'なし') return DEFAULT_COLOR;
-  if (SUBJECT_COLORS[subject]) return SUBJECT_COLORS[subject];
-  return CUSTOM_COLOR; // カスタム教科
+/* ── VARIABLES ── */
+:root {
+  --bg:           #f4f5f7;
+  --surface:      #ffffff;
+  --surface2:     #f0f2f5;
+  --border:       #dde1ea;
+  --border2:      #c8cdd8;
+  --accent:       #3d6ef5;
+  --accent-dark:  #2a55d4;
+  --accent-light: #e8eeff;
+  --accent2:      #f0487e;
+  --text:         #1a1e2e;
+  --text2:        #6b7594;
+  --text3:        #9aa0b8;
+  --today-bg:     #edf0ff;
+  --today-border: #3d6ef5;
+  --done-bg:      #f0faf3;
+  --done-border:  #c8e6cc;
+  --done-text:    #5a9e6a;
+  --modal-bg:     rgba(30, 35, 60, 0.45);
+  --radius:       14px;
+  --shadow-sm:    0 2px 8px rgba(0,0,0,0.08);
+  --shadow:       0 8px 32px rgba(0,0,0,0.14);
+  --shadow-lg:    0 16px 48px rgba(0,0,0,0.18);
+  --overdue-h:    0px; /* JS で制御 */
 }
 
-// ── HELPERS ──
-const DAY = ['日','月','火','水','木','金','土'];
-
-function toDateStr(d) {
-  const y   = d.getFullYear();
-  const m   = String(d.getMonth() + 1).padStart(2, '0');
-  const dd  = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
+/* ── SUBJECT COLOR VARS ── */
+:root {
+  --c-国語-bg:    #ffeaea; --c-国語-fg:    #cc2222; --c-国語-border: #ffb3b3;
+  --c-数学-bg:    #e8f0ff; --c-数学-fg:    #1a44cc; --c-数学-border: #b3c8ff;
+  --c-英語-bg:    #fffbe0; --c-英語-fg:    #998800; --c-英語-border: #ffe680;
+  --c-化学-bg:    #fffbe0; --c-化学-fg:    #998800; --c-化学-border: #ffe680;
+  --c-生物-bg:    #eafff0; --c-生物-fg:    #1a8840; --c-生物-border: #b3eec8;
+  --c-日本史-bg:  #f5eaff; --c-日本史-fg:  #7722cc; --c-日本史-border:#ddb3ff;
+  --c-情報-bg:    #e0faff; --c-情報-fg:    #0088aa; --c-情報-border: #b3eeff;
+  --c-custom-bg:  #ffeaf5; --c-custom-fg:  #cc2266; --c-custom-border:#ffb3d9;
 }
 
-function getWeekDates(offset = 0) {
-  const t = new Date();
-  t.setHours(0, 0, 0, 0);
-  t.setDate(t.getDate() + offset * 7);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(t);
-    d.setDate(t.getDate() + i);
-    return d;
-  });
+/* ── RESET ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Noto Sans JP', sans-serif;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  padding-top:    env(safe-area-inset-top);
+  padding-right:  env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left:   env(safe-area-inset-left);
 }
 
-function getTodayStr() {
-  return toDateStr(new Date());
+/* ── APP SHELL ── */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
 }
 
-function genId() {
-  return Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+/* ── HEADER ── */
+header {
+  background: var(--surface);
+  border-bottom: 1.5px solid var(--border);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  z-index: 10;
+  box-shadow: var(--shadow-sm);
+}
+.logo {
+  font-family: 'DM Serif Display', serif;
+  font-size: 22px;
+  color: var(--accent);
+  letter-spacing: -0.5px;
+  cursor: pointer;
+  flex: 1;
+  line-height: 1;
+}
+.logo span { color: var(--accent2); }
+
+#sync-status {
+  font-size: 13px;
+  color: var(--text2);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  cursor: pointer;
+  padding: 6px 9px;
+  border-radius: 9px;
+  transition: background 0.15s;
+}
+#sync-status:hover { background: var(--surface2); }
+#sync-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--text3);
+  transition: background 0.3s;
+  flex-shrink: 0;
+}
+#sync-dot.ok      { background: #3db86a; }
+#sync-dot.err     { background: var(--accent2); }
+#sync-dot.syncing { background: var(--accent); animation: pulse 0.8s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ── TABLE ── */
+#table-wrap {
+  flex: 1;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  min-height: 0;
 }
 
-function esc(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
-// ── SYNC ──
-function setSyncUI(state, label) {
-  document.getElementById('sync-dot').className     = state;
-  document.getElementById('sync-label').textContent = label;
+/* ── GOAL ROW ── */
+#goal-row td {
+  background: #fffbe8;
+  border: 1px solid #e8dfa0;
+  border-bottom: 2px solid #d4c060;
+  padding: 6px 8px;
+}
+.goal-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.goal-nav-btn {
+  background: #f5e88a;
+  border: 1px solid #c8b830;
+  border-radius: 7px;
+  color: #7a6600;
+  font-size: 18px;
+  width: 34px; height: 34px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  font-weight: 700;
+  line-height: 1;
+}
+.goal-nav-btn:hover  { background: #e8d660; }
+.goal-nav-btn:active { background: #c8b830; }
+#goal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 16px;
+  font-family: 'Noto Sans JP', sans-serif;
+  color: var(--text);
+  padding: 4px 2px;
+  min-width: 0;
+}
+#goal-input::placeholder { color: #b8a840; }
+
+/* ── DATE HEADER ── */
+thead tr#date-row th {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 8px 4px 7px;
+  text-align: center;
+  font-size: 13px;
+  font-family: 'DM Serif Display', serif;
+  font-weight: 400;
+  color: var(--text2);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  box-shadow: 0 1px 0 var(--border);
+}
+thead tr#date-row th.today-col {
+  color: var(--accent);
+  border-bottom: 2.5px solid var(--accent);
+  background: var(--accent-light);
+}
+thead tr#date-row th .day-num {
+  font-size: 20px;
+  display: block;
+  color: var(--text);
+  line-height: 1.2;
+}
+thead tr#date-row th.today-col .day-num { color: var(--accent); }
+
+/* ── BODY CELLS ── */
+tbody td {
+  border: 1px solid var(--border);
+  vertical-align: top;
+  padding: 6px 5px 8px;
+  min-height: 80px;
+  background: var(--surface);
+}
+tbody td.today-col {
+  background: var(--today-bg);
+  border-color: #b8c8ff;
 }
 
-async function pushToCloud() {
-  if (!config.userId) return;
-  setSyncUI('syncing', '同期中…');
-  try {
-    const r = await fetch(`${WORKER_URL}/tasks/${config.userId}`, {
-      method:  'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(tasks),
-    });
-    if (!r.ok) throw new Error(r.status);
-    setSyncUI('ok', '同期済み ✓');
-  } catch(e) {
-    setSyncUI('err', 'エラー');
-  }
+/* ── TASK ITEM ── */
+.task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-bottom: 6px;
+  padding: 8px 7px;
+  border-radius: 10px;
+  /* 背景・ボーダーは JS で教科カラーを inline style で設定 */
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: opacity 0.15s, box-shadow 0.15s;
+  animation: slideIn 0.18s ease;
+  min-width: 0;
+}
+@keyframes slideIn {
+  from { opacity:0; transform:translateY(-5px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.task-item:hover  { box-shadow: var(--shadow-sm); }
+.task-item:active { opacity: 0.8; }
+.task-item.done   { opacity: 0.55; }
+
+/* Checkbox */
+.task-cb {
+  width: 24px; height: 24px;
+  min-width: 24px;
+  border-radius: 7px;
+  border: 2px solid var(--border2);
+  background: rgba(255,255,255,0.7);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  margin-top: 1px;
+  transition: background 0.15s, border-color 0.15s;
+  cursor: pointer;
+}
+.task-item.done .task-cb {
+  background: #3db86a;
+  border-color: #3db86a;
+}
+.task-cb::after {
+  content: '';
+  width: 6px; height: 10px;
+  border-right: 2.5px solid #fff;
+  border-bottom: 2.5px solid #fff;
+  transform: rotate(45deg) translate(-1px,-1px);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.task-item.done .task-cb::after { opacity: 1; }
+
+/* Task label */
+.task-label {
+  font-size: 14px;
+  line-height: 1.45;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  flex: 1;
+  color: var(--text);
+}
+.task-item.done .task-label {
+  text-decoration: line-through;
+  color: var(--text2);
 }
 
-async function pullFromCloud() {
-  if (!config.userId) { setSyncUI('', '未設定'); return; }
-  setSyncUI('syncing', '読込中…');
-  try {
-    const r = await fetch(`${WORKER_URL}/tasks/${config.userId}`);
-    if (!r.ok) throw new Error(r.status);
-    const data = await r.json();
-    if (Array.isArray(data)) {
-      tasks = data;
-      localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-    }
-    setSyncUI('ok', '同期済み ✓');
-    render();
-  } catch(e) {
-    setSyncUI('err', 'エラー');
-  }
+.subject-tag {
+  font-size: 11px;
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-weight: 700;
+  display: inline-block;
+  margin-top: 3px;
+}
+.remind-info {
+  font-size: 11px;
+  color: var(--text2);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 3px;
 }
 
-function schedulePush() {
-  localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-  clearTimeout(syncTimer);
-  syncTimer = setTimeout(pushToCloud, 1500);
+/* ── NEW BUTTON ── */
+.new-btn {
+  width: 100%;
+  background: transparent;
+  border: 1.5px dashed var(--border2);
+  border-radius: 10px;
+  color: var(--text3);
+  font-size: 22px;
+  padding: 9px 0;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  margin-top: 3px;
+}
+.new-btn:hover, .new-btn:active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
 }
 
-// ── GOAL ──
-function getGoalKey() {
-  // 週ごとにキーを分ける（週の月曜日の日付で管理）
-  return GOAL_KEY + '_' + weekOffset;
+/* ── OVERDUE SECTION ── */
+#overdue-section {
+  flex-shrink: 0;
+  background: #fff8f0;
+  border-top: 2px solid #f0b060;
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+  transition: max-height 0.3s ease;
+  overflow: hidden;
 }
-function loadGoal() {
-  return localStorage.getItem(getGoalKey()) || '';
+#overdue-section.collapsed {
+  max-height: 42px;
 }
-function saveGoal(val) {
-  localStorage.setItem(getGoalKey(), val);
+#overdue-section.hidden {
+  display: none;
 }
+#overdue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+#overdue-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #c06010;
+}
+#overdue-toggle {
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: #c06010;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+#overdue-toggle:hover { background: #ffe8cc; }
 
-// ── RENDER ──
-function render() {
-  const dates   = getWeekDates(weekOffset);
-  const todayStr = getTodayStr();
-
-  // Colgroup
-  document.getElementById('cols').innerHTML = dates.map(() => '<col>').join('');
-
-  // ── Goal row ──
-  const goalRow = document.getElementById('goal-row');
-  goalRow.innerHTML = '';
-  const goalTd = document.createElement('td');
-  goalTd.colSpan = 7;
-
-  const nav = document.createElement('div');
-  nav.className = 'goal-nav';
-
-  const prevBtn = document.createElement('button');
-  prevBtn.className   = 'goal-nav-btn';
-  prevBtn.textContent = '＜';
-  prevBtn.title       = '前の週';
-  prevBtn.addEventListener('click', () => { weekOffset--; render(); });
-
-  const goalInput = document.createElement('input');
-  goalInput.type        = 'text';
-  goalInput.id          = 'goal-input';
-  goalInput.placeholder = '📌 長期的な目標を入力…';
-  goalInput.value       = loadGoal();
-  goalInput.addEventListener('input', () => saveGoal(goalInput.value));
-
-  const nextBtn = document.createElement('button');
-  nextBtn.className   = 'goal-nav-btn';
-  nextBtn.textContent = '＞';
-  nextBtn.title       = '次の週';
-  nextBtn.addEventListener('click', () => { weekOffset++; render(); });
-
-  nav.appendChild(prevBtn);
-  nav.appendChild(goalInput);
-  nav.appendChild(nextBtn);
-  goalTd.appendChild(nav);
-  goalRow.appendChild(goalTd);
-
-  // ── Date headers ──
-  document.getElementById('date-row').innerHTML = dates.map((d, i) => {
-    const ds  = toDateStr(d);
-    const cls = ds === todayStr ? 'today-col' : '';
-    return `<th class="${cls}">
-      <span class="day-num">${d.getDate()}</span>
-      ${d.getMonth() + 1}/${d.getDate()}(${DAY[d.getDay()]})
-    </th>`;
-  }).join('');
-
-  // ── Task columns ──
-  const cols7 = dates.map(d => tasks.filter(t => t.date === toDateStr(d)));
-
-  const tbody = document.getElementById('task-body');
-  tbody.innerHTML = '';
-  const row = document.createElement('tr');
-
-  dates.forEach((d, ci) => {
-    const ds  = toDateStr(d);
-    const td  = document.createElement('td');
-    if (ds === todayStr) td.classList.add('today-col');
-
-    cols7[ci].forEach(t => td.appendChild(makeTaskEl(t)));
-
-    const btn = document.createElement('button');
-    btn.className   = 'new-btn';
-    btn.textContent = '＋';
-    btn.addEventListener('click', () => openModal(null, ds));
-    td.appendChild(btn);
-
-    row.appendChild(td);
-  });
-
-  tbody.appendChild(row);
-
-  // ── Overdue section ──
-  renderOverdue();
+#overdue-list {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 8px 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+/* overdue の各タスクも同じ task-item スタイル流用 */
+#overdue-list .task-item {
+  flex-shrink: 0;
+  min-width: 120px;
+  max-width: 180px;
+  animation: none;
+}
+.overdue-date-label {
+  font-size: 10px;
+  color: #c06010;
+  font-weight: 700;
+  margin-bottom: 2px;
 }
 
-function applyTaskStyle(el, subject) {
-  const c = getColor(subject);
-  el.style.background   = c.bg;
-  el.style.borderColor  = c.border;
+/* ── TASK MODAL ── */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--modal-bg);
+  align-items: flex-end; justify-content: center;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.modal-overlay.open { display: flex; animation: fadeIn 0.18s ease; }
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+
+.modal {
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  border: 1.5px solid var(--border);
+  border-bottom: none;
+  width: 100%; max-width: 640px;
+  padding: 22px 22px calc(22px + env(safe-area-inset-bottom));
+  box-shadow: var(--shadow-lg);
+  animation: slideUp 0.22s cubic-bezier(.22,1,.36,1);
+  max-height: 93dvh; overflow-y: auto;
+}
+@keyframes slideUp {
+  from { transform:translateY(60px); opacity:0; }
+  to   { transform:translateY(0);    opacity:1; }
 }
 
-function makeTaskEl(task, isOverdue = false) {
-  const div = document.createElement('div');
-  div.className = 'task-item' + (task.done ? ' done' : '');
-  applyTaskStyle(div, task.subject);
+.modal-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 22px;
+  margin-bottom: 20px;
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-close {
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  color: var(--text2);
+  font-size: 20px;
+  cursor: pointer;
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.modal-close:hover { background: var(--border); color: var(--text); }
 
-  // Checkbox
-  const cb = document.createElement('div');
-  cb.className = 'task-cb';
-  cb.style.borderColor = getColor(task.subject).border;
-  cb.addEventListener('click', e => {
-    e.stopPropagation();
-    task.done = !task.done;
-    schedulePush();
-    render();
-  });
-
-  // Label
-  const lbl = document.createElement('div');
-  lbl.className = 'task-label';
-  const c = getColor(task.subject);
-
-  let inner = '';
-  if (isOverdue) {
-    inner += `<div class="overdue-date-label">${task.date}</div>`;
-  }
-  inner += `<div style="color:${c.fg};font-weight:600;">${esc(task.title)}</div>`;
-
-  if (task.subject && task.subject !== 'なし') {
-    inner += `<span class="subject-tag" style="background:${c.bg};color:${c.fg};border:1px solid ${c.border};">${esc(task.subject)}</span>`;
-  }
-  if (task.remind && task.remind !== '0') {
-    inner += `<div class="remind-info">⏰ ${task.remind}日前</div>`;
-  }
-  lbl.innerHTML = inner;
-
-  div.appendChild(cb);
-  div.appendChild(lbl);
-  div.addEventListener('click', () => openModal(task.id));
-  return div;
+.form-group { margin-bottom: 18px; }
+.form-label {
+  display: block;
+  font-size: 13px; font-weight: 700;
+  color: var(--text2);
+  margin-bottom: 7px;
+  letter-spacing: 0.04em;
+}
+.form-input, .form-select {
+  width: 100%;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 18px;
+  font-family: 'Noto Sans JP', sans-serif;
+  padding: 13px 16px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  -webkit-appearance: none; appearance: none;
+}
+.form-input:focus, .form-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(61,110,245,0.12);
+}
+.form-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='9' viewBox='0 0 13 9'%3E%3Cpath fill='%236b7594' d='M6.5 9L0 0h13z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  padding-right: 42px;
 }
 
-// ── OVERDUE ──
-function renderOverdue() {
-  const todayStr = getTodayStr();
-  const overdueTasks = tasks.filter(t => !t.done && t.date < todayStr);
-  const section = document.getElementById('overdue-section');
-  const list    = document.getElementById('overdue-list');
+.modal-actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
 
-  if (overdueTasks.length === 0) {
-    section.classList.add('hidden');
-    return;
-  }
-  section.classList.remove('hidden');
-
-  if (overdueOpen) {
-    section.classList.remove('collapsed');
-    document.getElementById('overdue-toggle').textContent = '▼ 閉じる';
-  } else {
-    section.classList.add('collapsed');
-    document.getElementById('overdue-toggle').textContent = '▶ 開く';
-  }
-
-  // 日付昇順でソート
-  overdueTasks.sort((a, b) => a.date < b.date ? -1 : 1);
-
-  list.innerHTML = '';
-  overdueTasks.forEach(t => list.appendChild(makeTaskEl(t, true)));
+.btn-primary {
+  flex: 1; min-width: 120px;
+  background: var(--accent); color: #fff; border: none;
+  border-radius: 12px; font-size: 18px; font-weight: 700;
+  font-family: 'Noto Sans JP', sans-serif; padding: 15px; cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  box-shadow: 0 3px 10px rgba(61,110,245,0.28);
 }
+.btn-primary:hover  { background: var(--accent-dark); }
+.btn-primary:active { transform: scale(0.97); }
 
-document.getElementById('overdue-header').addEventListener('click', () => {
-  overdueOpen = !overdueOpen;
-  renderOverdue();
-});
-
-// ── TASK MODAL ──
-function handleSubjectChange(val) {
-  const g = document.getElementById('custom-subject-group');
-  g.style.display = (val === 'カスタム') ? 'block' : 'none';
+.btn-danger {
+  background: #fff0f3; color: var(--accent2);
+  border: 1.5px solid #ffc8d6;
+  border-radius: 12px; font-size: 18px; font-weight: 700;
+  font-family: 'Noto Sans JP', sans-serif; padding: 15px 22px; cursor: pointer;
+  transition: background 0.15s;
 }
+.btn-danger:hover  { background: #ffe0e8; }
+.btn-danger:active { background: #ffc8d6; }
 
-function openModal(id, dateStr) {
-  editingId = id || null;
-  document.getElementById('modal-title-text').textContent = id ? '編集' : '新規作成';
-
-  // カスタムフィールドリセット
-  document.getElementById('custom-subject-group').style.display = 'none';
-
-  if (id) {
-    const t = tasks.find(t => t.id === id);
-
-    // 教科がプリセットかカスタムか判定
-    const presets = ['なし','国語','数学','英語','化学','生物','日本史','情報','カスタム'];
-    const isPreset = presets.includes(t.subject);
-
-    if (isPreset) {
-      document.getElementById('f-subject').value = t.subject;
-      document.getElementById('f-custom-subject').value = '';
-      if (t.subject === 'カスタム') {
-        document.getElementById('custom-subject-group').style.display = 'block';
-      }
-    } else {
-      // カスタム名が保存されている
-      document.getElementById('f-subject').value = 'カスタム';
-      document.getElementById('f-custom-subject').value = t.subject;
-      document.getElementById('custom-subject-group').style.display = 'block';
-    }
-
-    document.getElementById('f-title').value  = t.title  || '';
-    document.getElementById('f-date').value   = t.date   || '';
-    document.getElementById('f-remind').value = t.remind || '0';
-
-    document.getElementById('modal-actions').innerHTML = `
-      <button class="btn-primary"   id="modal-save">保存する</button>
-      <button class="btn-danger"    id="modal-delete">削除</button>
-      <button class="btn-secondary" id="modal-cancel">キャンセル</button>`;
-    document.getElementById('modal-delete').addEventListener('click', deleteTask);
-  } else {
-    document.getElementById('f-title').value   = '';
-    document.getElementById('f-date').value    = dateStr || getTodayStr();
-    document.getElementById('f-remind').value  = '0';
-    document.getElementById('f-subject').value = 'なし';
-    document.getElementById('f-custom-subject').value = '';
-
-    document.getElementById('modal-actions').innerHTML = `
-      <button class="btn-primary"   id="modal-save">保存する</button>
-      <button class="btn-secondary" id="modal-cancel">キャンセル</button>`;
-  }
-
-  document.getElementById('modal-save').addEventListener('click', saveTask);
-  document.getElementById('modal-cancel').addEventListener('click', closeModal);
-  document.getElementById('modal-overlay').classList.add('open');
-  setTimeout(() => document.getElementById('f-title').focus(), 260);
+.btn-secondary {
+  background: var(--surface2); color: var(--text2);
+  border: 1.5px solid var(--border);
+  border-radius: 12px; font-size: 18px; font-weight: 700;
+  font-family: 'Noto Sans JP', sans-serif; padding: 15px 22px; cursor: pointer;
+  transition: background 0.15s;
 }
+.btn-secondary:hover  { background: var(--border); }
+.btn-secondary:active { background: var(--border2); }
 
-function closeModal() {
-  document.getElementById('modal-overlay').classList.remove('open');
+/* ── SETUP MODAL ── */
+#setup-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 200;
+  background: var(--modal-bg);
+  align-items: center; justify-content: center;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  padding: 20px;
 }
+#setup-overlay.open { display: flex; animation: fadeIn 0.2s ease; }
 
-function getSubjectValue() {
-  const sel = document.getElementById('f-subject').value;
-  if (sel === 'カスタム') {
-    const custom = document.getElementById('f-custom-subject').value.trim();
-    return custom || 'カスタム';
-  }
-  return sel;
+#setup-box {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px 28px;
+  width: 100%; max-width: 420px;
+  box-shadow: var(--shadow-lg);
+  animation: scaleIn 0.2s cubic-bezier(.22,1,.36,1);
 }
-
-function saveTask() {
-  const title   = document.getElementById('f-title').value.trim();
-  const date    = document.getElementById('f-date').value;
-  if (!title) { showToast('タイトルを入力してください'); return; }
-  if (!date)  { showToast('日付を選択してください');    return; }
-  const remind  = document.getElementById('f-remind').value;
-  const subject = getSubjectValue();
-
-  if (editingId) {
-    const i = tasks.findIndex(t => t.id === editingId);
-    if (i >= 0) tasks[i] = { ...tasks[i], title, date, remind, subject };
-    showToast('更新しました ✓');
-  } else {
-    tasks.push({ id: genId(), title, date, remind, subject, done: false });
-    showToast('追加しました ✓');
-  }
-  schedulePush();
-  closeModal();
-  render();
+@keyframes scaleIn {
+  from { transform: scale(0.94); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
 }
-
-function deleteTask() {
-  if (!editingId || !confirm('この予定を削除しますか？')) return;
-  tasks = tasks.filter(t => t.id !== editingId);
-  schedulePush();
-  closeModal();
-  render();
-  showToast('削除しました');
+#setup-box h2 {
+  font-family: 'DM Serif Display', serif;
+  color: var(--accent);
+  font-size: 24px; font-weight: 400;
+  margin-bottom: 10px;
 }
-
-// ── SETUP MODAL ──
-function showSetup() {
-  document.getElementById('setup-uid').value = config.userId || '';
-
-  const wrap    = document.getElementById('setup-current-user-wrap');
-  const uidEl   = document.getElementById('setup-current-uid');
-  const btnSkip = document.getElementById('setup-skip');
-  const btnOut  = document.getElementById('setup-logout');
-
-  if (config.userId) {
-    uidEl.textContent     = config.userId;
-    wrap.style.display    = 'flex';
-    btnOut.style.display  = 'block';
-    btnSkip.style.display = 'none';
-  } else {
-    wrap.style.display    = 'none';
-    btnOut.style.display  = 'none';
-    btnSkip.style.display = 'block';
-  }
-
-  document.getElementById('setup-overlay').classList.add('open');
+#setup-box > p {
+  color: var(--text2);
+  font-size: 15px; line-height: 1.7;
+  margin-bottom: 22px;
 }
-
-document.getElementById('setup-save').addEventListener('click', async () => {
-  const uid = document.getElementById('setup-uid').value.trim().replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!uid) { showToast('ユーザーIDを入力してください'); return; }
-  config = { userId: uid };
-  localStorage.setItem(CFG_KEY, JSON.stringify(config));
-  document.getElementById('setup-overlay').classList.remove('open');
-  await pullFromCloud();
-  showToast('同期を開始しました ✓');
-});
-
-document.getElementById('setup-skip').addEventListener('click', () => {
-  document.getElementById('setup-overlay').classList.remove('open');
-  setSyncUI('', 'ローカルのみ');
-});
-
-document.getElementById('setup-logout').addEventListener('click', () => {
-  if (!confirm('ログアウトしますか？\nこのデバイスのローカルデータも削除されます。')) return;
-  config = {};
-  tasks  = [];
-  localStorage.removeItem(CFG_KEY);
-  localStorage.removeItem(TASKS_KEY);
-  document.getElementById('setup-overlay').classList.remove('open');
-  setSyncUI('', '未設定');
-  render();
-  showToast('ログアウトしました');
-  setTimeout(showSetup, 400);
-});
-
-// ── HEADER EVENTS ──
-document.getElementById('modal-overlay').addEventListener('click', function(e) {
-  if (e.target === this) closeModal();
-});
-document.getElementById('modal-close').addEventListener('click', closeModal);
-document.getElementById('sync-status').addEventListener('click', showSetup);
-document.getElementById('logo-btn').addEventListener('click', showSetup);
-
-// ── TOAST ──
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2200);
+#setup-current-user-wrap {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  background: var(--accent-light);
+  border: 1.5px solid #b8caff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 18px;
 }
-
-// ── INIT ──
-render();
-if (!config.userId) {
-  showSetup();
-} else {
-  pullFromCloud();
+#setup-current-user-wrap .label {
+  font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap;
 }
+#setup-current-uid {
+  font-size: 16px; font-weight: 700; color: var(--text);
+  font-family: 'DM Serif Display', serif;
+  word-break: break-all; flex: 1;
+}
+.setup-field { margin-bottom: 18px; }
+.setup-field label {
+  display: block;
+  font-size: 13px; font-weight: 700; color: var(--text2);
+  margin-bottom: 7px; letter-spacing: 0.04em;
+}
+.setup-field input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 10px; color: var(--text);
+  font-size: 18px; font-family: 'Noto Sans JP', sans-serif;
+  padding: 13px 16px; outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.setup-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(61,110,245,0.12);
+}
+.setup-field input::placeholder { color: var(--text3); font-size: 15px; }
 
-// Midnight re-render
-setInterval(() => {
-  const n = new Date();
-  if (n.getHours() === 0 && n.getMinutes() === 0) render();
-}, 60000);
+#setup-save {
+  width: 100%;
+  background: var(--accent); color: #fff; border: none;
+  border-radius: 12px; font-size: 18px; font-weight: 700;
+  font-family: 'Noto Sans JP', sans-serif; padding: 15px; cursor: pointer;
+  transition: background 0.15s;
+  box-shadow: 0 3px 10px rgba(61,110,245,0.28);
+}
+#setup-save:hover  { background: var(--accent-dark); }
+#setup-hint {
+  font-size: 13px; color: var(--text3);
+  margin-top: 12px; text-align: center; line-height: 1.6;
+}
+#setup-logout {
+  display: none;
+  width: 100%;
+  background: #fff0f3; color: var(--accent2);
+  border: 1.5px solid #ffc8d6;
+  border-radius: 12px; font-size: 16px; font-weight: 700;
+  font-family: 'Noto Sans JP', sans-serif; padding: 13px; cursor: pointer;
+  margin-top: 10px;
+  transition: background 0.15s;
+}
+#setup-logout:hover  { background: #ffe0e8; }
+#setup-skip {
+  background: none; border: none;
+  color: var(--text3); font-size: 14px;
+  width: 100%; margin-top: 10px;
+  cursor: pointer; text-decoration: underline;
+  padding: 8px; font-family: 'Noto Sans JP', sans-serif;
+}
+#setup-skip:hover { color: var(--text2); }
+
+/* ── TOAST ── */
+#toast {
+  position: fixed;
+  bottom: calc(28px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--text);
+  color: #fff;
+  font-size: 15px;
+  padding: 12px 24px;
+  border-radius: 100px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 300;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+}
+#toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
