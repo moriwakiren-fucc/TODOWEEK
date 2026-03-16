@@ -1,7 +1,8 @@
 // ── FIXED CONFIG ──
-const WORKER_URL = 'https://todoweek-api.moriwakiren-fucc.workers.dev';
-const CFG_KEY    = 'todoweek_config_v1';
-const TASKS_KEY  = 'todoweek_tasks_v2';
+const WORKER_URL  = 'https://todoweek-api.moriwakiren-fucc.workers.dev';
+const CFG_KEY     = 'todoweek_config_v1';
+const TASKS_KEY   = 'todoweek_tasks_v2';
+const GOAL_KEY    = 'todoweek_goal_v1';
 
 // ── STATE ──
 let config = {};
@@ -9,15 +10,15 @@ try { config = JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch(e) {}
 let tasks = [];
 try { tasks = JSON.parse(localStorage.getItem(TASKS_KEY)) || []; } catch(e) {}
 
-let syncTimer  = null;
-let editingId  = null;
+let syncTimer = null;
+let editingId = null;
 
 // ── HELPERS ──
 const DAY = ['日','月','火','水','木','金','土'];
 
 function toDateStr(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
@@ -45,7 +46,7 @@ function esc(s) {
 
 // ── SYNC ──
 function setSyncUI(state, label) {
-  document.getElementById('sync-dot').className   = state;
+  document.getElementById('sync-dot').className    = state;
   document.getElementById('sync-label').textContent = label;
 }
 
@@ -89,6 +90,14 @@ function schedulePush() {
   syncTimer = setTimeout(pushToCloud, 1500);
 }
 
+// ── WEEKLY GOAL ──
+function loadGoal() {
+  return localStorage.getItem(GOAL_KEY) || '';
+}
+function saveGoal(val) {
+  localStorage.setItem(GOAL_KEY, val);
+}
+
 // ── RENDER ──
 function render() {
   const dates = getWeekDates();
@@ -96,7 +105,21 @@ function render() {
   // Colgroup
   document.getElementById('cols').innerHTML = dates.map(() => '<col>').join('');
 
-  // Date headers
+  // ── Goal row (colspan=7) ──
+  const goalRow = document.getElementById('goal-row');
+  goalRow.innerHTML = '';
+  const goalTd = document.createElement('td');
+  goalTd.colSpan = 7;
+  const goalInput = document.createElement('input');
+  goalInput.type        = 'text';
+  goalInput.id          = 'goal-input';
+  goalInput.placeholder = '📌 今週の目標を入力…';
+  goalInput.value       = loadGoal();
+  goalInput.addEventListener('input', () => saveGoal(goalInput.value));
+  goalTd.appendChild(goalInput);
+  goalRow.appendChild(goalTd);
+
+  // ── Date headers ──
   document.getElementById('date-row').innerHTML = dates.map((d, i) => `
     <th class="${i === 0 ? 'today-col' : ''}">
       <span class="day-num">${d.getDate()}</span>
@@ -104,7 +127,7 @@ function render() {
     </th>
   `).join('');
 
-  // Tasks per column
+  // ── Task columns ──
   const cols7 = dates.map(d => tasks.filter(t => t.date === toDateStr(d)));
 
   const tbody = document.getElementById('task-body');
@@ -238,13 +261,13 @@ function showSetup() {
   const btnOut  = document.getElementById('setup-logout');
 
   if (config.userId) {
-    uidEl.textContent   = config.userId;
-    wrap.style.display  = 'flex';
-    btnOut.style.display = 'block';
+    uidEl.textContent     = config.userId;
+    wrap.style.display    = 'flex';
+    btnOut.style.display  = 'block';
     btnSkip.style.display = 'none';
   } else {
-    wrap.style.display   = 'none';
-    btnOut.style.display = 'none';
+    wrap.style.display    = 'none';
+    btnOut.style.display  = 'none';
     btnSkip.style.display = 'block';
   }
 
@@ -267,33 +290,7 @@ document.getElementById('setup-skip').addEventListener('click', () => {
 });
 
 document.getElementById('setup-logout').addEventListener('click', () => {
-  if (!confirm('ログアウトしますか？\nこのデバイスのローカルデータも消えます。')) return;
-  config = {};
-  localStorage.removeItem(CFG_KEY);
-  tasks = [];
-  localStorage.removeItem(TASKS_KEY);
-  document.getElementById('setup-overlay').classList.remove('open');
-  setSyncUI('', '未設定');
-  render();
-  showToast('ログアウトしました');
-  setTimeout(showSetup, 400);
-});
-
-document.getElementById('setup-logout').addEventListener('click', () => {
-  if (!confirm('ログアウトしますか？\nこのデバイスのデータは削除されます。')) return;
-  config = {};
-  tasks  = [];
-  localStorage.removeItem(CFG_KEY);
-  localStorage.removeItem(TASKS_KEY);
-  document.getElementById('setup-overlay').classList.remove('open');
-  setSyncUI('', '未設定');
-  render();
-  showToast('ログアウトしました');
-  setTimeout(showSetup, 400);
-});
-
-document.getElementById('setup-logout').addEventListener('click', () => {
-  if (!confirm('ログアウトしますか？\nこのデバイスのデータは削除されます。')) return;
+  if (!confirm('ログアウトしますか？\nこのデバイスのローカルデータも削除されます。')) return;
   config = {};
   tasks  = [];
   localStorage.removeItem(CFG_KEY);
