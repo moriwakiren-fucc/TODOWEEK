@@ -1,8 +1,8 @@
-
 {
   "name": "TodoWeek",
   "short_name": "TodoWeek",
-  "start_url": "/",
+  "start_url": "/TODOWEEK/",
+  "scope": "/TODOWEEK/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
