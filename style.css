@@ -12,8 +12,8 @@
   --text:         #1a1e2e;
   --text2:        #6b7594;
   --text3:        #9aa0b8;
-  --today-bg:     #edf0ff;
-  --today-border: #3d6ef5;
+  --today-bg:     #fff3e8;
+  --today-border: #f0a060;
   --done-bg:      #f0faf3;
   --done-border:  #c8e6cc;
   --done-text:    #5a9e6a;
@@ -185,9 +185,9 @@ thead tr#date-row th {
   box-shadow: 0 1px 0 var(--border);
 }
 thead tr#date-row th.today-col {
-  color: var(--accent);
-  border-bottom: 2.5px solid var(--accent);
-  background: var(--accent-light);
+  color: #e07020;
+  border-bottom: 2.5px solid #f0a060;
+  background: #fff3e8;
 }
 thead tr#date-row th .day-num {
   font-size: 20px;
@@ -195,7 +195,13 @@ thead tr#date-row th .day-num {
   color: var(--text);
   line-height: 1.2;
 }
-thead tr#date-row th.today-col .day-num { color: var(--accent); }
+thead tr#date-row th.today-col .day-num { color: #e07020; }
+thead tr#date-row th.sun-col  { color: #cc2222; }
+thead tr#date-row th.sun-col .day-num  { color: #cc2222; }
+thead tr#date-row th.sat-col  { color: #1a44cc; }
+thead tr#date-row th.sat-col .day-num  { color: #1a44cc; }
+thead tr#date-row th.hol-col  { color: #cc2222; }
+thead tr#date-row th.hol-col .day-num  { color: #cc2222; }
 
 /* ── BODY CELLS ── */
 tbody td {
@@ -207,7 +213,7 @@ tbody td {
 }
 tbody td.today-col {
   background: var(--today-bg);
-  border-color: #b8c8ff;
+  border-color: #f0c090;
 }
 
 /* ── TASK ITEM ── */
