@@ -433,21 +433,47 @@ function makeTaskEl(task, isOverdue = false) {
   return div;
 }
 
-// ── 通知時刻プルダウン生成（5分刻み） ──
-function buildNotifTimeSelect(selectedVal) {
-  const sel = document.getElementById('f-notif-time');
-  sel.innerHTML = '<option value="none">通知なし</option>';
+// ── 通知時刻プルダウン生成（時・分別々） ──
+function buildNotifTimeSelects(selectedVal) {
+  // selectedVal: 'none' or 'HH:MM'
+  const isNone = (!selectedVal || selectedVal === 'none');
+  const selH = document.getElementById('f-notif-hour');
+  const selM = document.getElementById('f-notif-min');
+
+  // 時プルダウン（なし + 0〜23）
+  selH.innerHTML = '<option value="none">通知なし</option>';
   for (let h = 0; h < 24; h++) {
-    for (let m = 0; m < 60; m += 5) {
-      const val   = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-      const label = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-      const opt   = document.createElement('option');
-      opt.value       = val;
-      opt.textContent = label;
-      if (val === selectedVal) opt.selected = true;
-      sel.appendChild(opt);
-    }
+    const val = String(h).padStart(2, '0');
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = `${h}時`;
+    if (!isNone && selectedVal.slice(0,2) === val) opt.selected = true;
+    selH.appendChild(opt);
   }
+  if (isNone) selH.value = 'none';
+
+  // 分プルダウン（5分刻み）
+  selM.innerHTML = '';
+  for (let m = 0; m < 60; m += 5) {
+    const val = String(m).padStart(2, '0');
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = `${val}分`;
+    if (!isNone && selectedVal.slice(3,5) === val) opt.selected = true;
+    selM.appendChild(opt);
+  }
+  // 「なし」選択中は分プルダウンを無効化
+  selM.disabled = isNone;
+
+  // 時プルダウン変更時に分を連動
+  selH.onchange = () => {
+    selM.disabled = (selH.value === 'none');
+  };
+}
+
+function getNotifTimeValue() {
+  const h = document.getElementById('f-notif-hour').value;
+  if (h === 'none') return 'none';
+  const m = document.getElementById('f-notif-min').value;
+  return `${h}:${m}`;
 }
 function renderOverdue() {
   const todayStr = getTodayStr();
@@ -546,7 +572,7 @@ function openModal(id, dateStr) {
     document.getElementById('f-title').value  = t.title  || '';
     document.getElementById('f-date').value   = t.date   || '';
     document.getElementById('f-remind').value = t.remind || '0';
-    buildNotifTimeSelect(t.notifTime || '07:00');
+    buildNotifTimeSelects(t.notifTime || '07:00');
     const presets = ['なし','国語','数学','英語','化学','生物','日本史','情報'];
     if (presets.includes(t.subject)) {
       document.getElementById('f-subject').value = t.subject;
@@ -568,7 +594,7 @@ function openModal(id, dateStr) {
     document.getElementById('f-remind').value  = '0';
     document.getElementById('f-subject').value = 'なし';
     document.getElementById('f-custom-subject').value = '';
-    buildNotifTimeSelect('07:00');
+    buildNotifTimeSelects('07:00');
     initFmtFromSubject('なし');
     document.getElementById('modal-actions').innerHTML = `
       <button class="btn-primary" id="modal-save">保存する</button>
@@ -596,7 +622,7 @@ function saveTask() {
   const finalDate = editingId ? document.getElementById('f-date').value : currentDateStr;
   if (!finalDate) { showToast('日付が設定されていません'); return; }
   const remind    = document.getElementById('f-remind').value;
-  const notifTime = document.getElementById('f-notif-time').value; // 'none' or 'HH:MM'
+  const notifTime = getNotifTimeValue(); // 'none' or 'HH:MM'
   const subject   = getSubjectValue();
   const format    = { bold:fmt.bold, underline:fmt.underline, 'double-underline':fmt['double-underline'], fg:fmt.fg, bg:fmt.bg };
   if (editingId) {
