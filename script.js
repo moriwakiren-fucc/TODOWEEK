@@ -435,13 +435,12 @@ function makeTaskEl(task, isOverdue = false) {
 
 // ── 通知時刻プルダウン生成（時・分別々） ──
 function buildNotifTimeSelects(selectedVal) {
-  // selectedVal: 'none' or 'HH:MM'
   const isNone = (!selectedVal || selectedVal === 'none');
   const selH = document.getElementById('f-notif-hour');
   const selM = document.getElementById('f-notif-min');
 
-  // 時プルダウン（なし + 0〜23）
-  selH.innerHTML = '<option value="none">通知なし</option>';
+  // 時プルダウン（0〜23のみ）
+  selH.innerHTML = '';
   for (let h = 0; h < 24; h++) {
     const val = String(h).padStart(2, '0');
     const opt = document.createElement('option');
@@ -449,7 +448,7 @@ function buildNotifTimeSelects(selectedVal) {
     if (!isNone && selectedVal.slice(0,2) === val) opt.selected = true;
     selH.appendChild(opt);
   }
-  if (isNone) selH.value = 'none';
+  if (isNone) selH.value = '07';
 
   // 分プルダウン（5分刻み）
   selM.innerHTML = '';
@@ -460,21 +459,23 @@ function buildNotifTimeSelects(selectedVal) {
     if (!isNone && selectedVal.slice(3,5) === val) opt.selected = true;
     selM.appendChild(opt);
   }
-  // 「なし」選択中は分プルダウンを無効化
-  selM.disabled = isNone;
-
-  // 時プルダウン変更時に分を連動
-  selH.onchange = () => {
-    selM.disabled = (selH.value === 'none');
-  };
+  if (isNone) selM.value = '00';
 }
 
 function getNotifTimeValue() {
+  const remindVal = document.getElementById('f-remind').value;
+  if (remindVal === '0') return 'none';
   const h = document.getElementById('f-notif-hour').value;
-  if (h === 'none') return 'none';
   const m = document.getElementById('f-notif-min').value;
   return `${h}:${m}`;
 }
+
+function updateNotifTimeVisibility() {
+  const remindVal = document.getElementById('f-remind').value;
+  document.getElementById('f-notif-time-group').style.display =
+    (remindVal === '0') ? 'none' : 'block';
+}
+
 function renderOverdue() {
   const todayStr = getTodayStr();
   const od = tasks.filter(t => !t.done && t.date < todayStr);
@@ -603,6 +604,8 @@ function openModal(id, dateStr) {
   document.getElementById('modal-save').addEventListener('click', saveTask);
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
   document.getElementById('f-title').addEventListener('input', updatePreview);
+  document.getElementById('f-remind').addEventListener('change', updateNotifTimeVisibility);
+  updateNotifTimeVisibility();
   document.getElementById('modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('f-title').focus(), 260);
   updateFmtUI();
