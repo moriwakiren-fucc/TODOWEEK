@@ -264,7 +264,6 @@ window.showNotifModal = async function() {
 async function refreshNotifModal() {
   const statusText = document.getElementById('notif-status-text');
   const toggleBtn  = document.getElementById('notif-toggle-btn');
-  const devicesList = document.getElementById('notif-devices-list');
 
   if (!('Notification' in window) || !('serviceWorker' in navigator)) {
     statusText.textContent = 'このブラウザでは通知を使えません';
@@ -273,59 +272,24 @@ async function refreshNotifModal() {
     return;
   }
 
-  const perm   = Notification.permission;
+  const perm    = Notification.permission;
   const thisSub = await getThisDeviceSub();
 
   if (perm === 'denied') {
-    statusText.textContent = 'ブロックされています（設定から変更してください）';
-    toggleBtn.textContent  = '許可できません';
-    toggleBtn.className    = 'btn-notif disabled';
+    statusText.textContent   = 'ブロックされています（設定から変更してください）';
+    toggleBtn.textContent    = '許可できません';
+    toggleBtn.className      = 'btn-notif disabled';
+    toggleBtn.dataset.state  = 'denied';
   } else if (thisSub) {
-    statusText.textContent = 'オン（毎日20:00に通知）';
-    toggleBtn.textContent  = 'オフにする';
-    toggleBtn.className    = 'btn-notif off';
-    toggleBtn.dataset.state = 'on';
+    statusText.textContent   = 'オン（毎日20:00に通知）';
+    toggleBtn.textContent    = 'オフにする';
+    toggleBtn.className      = 'btn-notif off';
+    toggleBtn.dataset.state  = 'on';
   } else {
-    statusText.textContent = '通知はオフです';
-    toggleBtn.textContent  = 'オンにする';
-    toggleBtn.className    = 'btn-notif';
-    toggleBtn.dataset.state = 'off';
-  }
-
-  // 登録済み端末一覧を取得して表示
-  devicesList.innerHTML = '<div style="font-size:13px;color:var(--text3);">読込中…</div>';
-  if (!config.userId) {
-    devicesList.innerHTML = '<div style="font-size:13px;color:var(--text3);">ユーザーIDが未設定です</div>';
-    return;
-  }
-
-  try {
-    const r    = await fetch(`${WORKER_URL}/devices/${config.userId}`);
-    const subs = await r.json();
-    if (!subs.length) {
-      devicesList.innerHTML = '<div style="font-size:13px;color:var(--text3);">登録済み端末はありません</div>';
-      return;
-    }
-    devicesList.innerHTML = '';
-    subs.forEach((sub, i) => {
-      const isCurrent = thisSub && thisSub.endpoint === sub.endpoint;
-      const item = document.createElement('div');
-      item.className = 'device-item';
-      item.innerHTML = `
-        <div class="device-info">
-          <div class="device-name ${isCurrent ? 'current' : ''}">
-            端末 ${i + 1}${isCurrent ? '（この端末）' : ''}
-          </div>
-          <div class="device-endpoint">${sub.endpoint.slice(0, 50)}…</div>
-        </div>
-        <button class="btn-device-delete ${isCurrent ? 'current' : ''}"
-                onclick="deleteDeviceSub('${sub.endpoint}')">
-          ${isCurrent ? 'オフにする' : '削除'}
-        </button>`;
-      devicesList.appendChild(item);
-    });
-  } catch(e) {
-    devicesList.innerHTML = '<div style="font-size:13px;color:var(--text3);">取得に失敗しました</div>';
+    statusText.textContent   = '通知はオフです';
+    toggleBtn.textContent    = 'オンにする';
+    toggleBtn.className      = 'btn-notif';
+    toggleBtn.dataset.state  = 'off';
   }
 }
 
@@ -343,7 +307,7 @@ window.handleNotifBtn = async function() {
 window.sendTestNotif = async function() {
   if (!config.userId) { showToast('ユーザーIDが未設定です'); return; }
   const btn = document.getElementById('notif-test-btn');
-  btn.disabled = true; btn.textContent = '送信中…';
+  btn.disabled = true; btn.innerHTML = '送信中…';
   try {
     const r = await fetch(`${WORKER_URL}/test-push/${config.userId}`);
     const t = await r.text();
@@ -355,7 +319,7 @@ window.sendTestNotif = async function() {
   } catch(e) {
     showToast('通信エラー');
   }
-  btn.disabled = false; btn.textContent = '📨 テスト通知を送る';
+  btn.disabled = false; btn.innerHTML = '📨 テスト通知を送る';
 };
 
 function showDebugMsg(msg) {
