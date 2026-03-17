@@ -3,6 +3,7 @@ const WORKER_URL = 'https://todoweek-api2.moriwakiren-fucc.workers.dev';
 const CFG_KEY    = 'todoweek_config_v1';
 const TASKS_KEY  = 'todoweek_tasks_v2';
 const GOAL_KEY   = 'todoweek_goal_v1';
+const SUB_KEY    = 'todoweek_sub_v1'; // この端末の購読情報
 
 // ── STATE ──
 let config = {};
@@ -10,11 +11,12 @@ try { config = JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch(e) {}
 let tasks = [];
 try { tasks = JSON.parse(localStorage.getItem(TASKS_KEY)) || []; } catch(e) {}
 
-let syncTimer   = null;
-let editingId   = null;
-let weekOffset  = 0;
-let overdueOpen = true;
+let syncTimer      = null;
+let editingId      = null;
+let weekOffset     = 0;
+let overdueOpen    = true;
 let currentDateStr = '';
+let cachedVapidKey = null;
 
 // ── FORMAT STATE ──
 let fmt = { bold: false, underline: false, 'double-underline': false, fg: null, bg: null };
@@ -38,7 +40,6 @@ function getColor(subject) {
   return CUSTOM_COLOR;
 }
 
-// ── PALETTE ──
 const FG_PALETTE = [
   null,
   '#cc2222','#cc6600','#998800','#1a8840','#0088aa','#1a44cc','#7722cc','#cc2266',
@@ -55,61 +56,39 @@ const HOLIDAY_MAP = {};
 (function buildHolidays() {
   function nthWeekday(year, month, dow, n) {
     const d = new Date(year, month - 1, 1); let count = 0;
-    while (true) {
-      if (d.getDay() === dow) { count++; if (count === n) return new Date(d); }
-      d.setDate(d.getDate() + 1);
-    }
+    while (true) { if (d.getDay() === dow) { count++; if (count === n) return new Date(d); } d.setDate(d.getDate() + 1); }
   }
-  function ds(d) {
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  }
+  function ds(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
   function add(d, label) { HOLIDAY_MAP[ds(d)] = label; }
   function addYMD(y,m,day,label) { add(new Date(y,m-1,day), label); }
-
-  const shunbunDays  = { 2024:20,2025:20,2026:20,2027:21,2028:20,2029:20,2030:20 };
-  const shubunDays   = { 2024:22,2025:23,2026:23,2027:23,2028:22,2029:23,2030:23 };
-
+  const shunbunDays = { 2024:20,2025:20,2026:20,2027:21,2028:20,2029:20,2030:20 };
+  const shubunDays  = { 2024:22,2025:23,2026:23,2027:23,2028:22,2029:23,2030:23 };
   for (let y = 2024; y <= 2030; y++) {
-    addYMD(y,1,1,'元日');
-    add(nthWeekday(y,1,1,2),'成人の日');
-    addYMD(y,2,11,'建国記念の日');
-    addYMD(y,2,23,'天皇誕生日');
-    addYMD(y,3,shunbunDays[y],'春分の日');
-    addYMD(y,4,29,'昭和の日');
-    addYMD(y,5,3,'憲法記念日');
-    addYMD(y,5,4,'みどりの日');
-    addYMD(y,5,5,'こどもの日');
-    add(nthWeekday(y,7,1,3),'海の日');
-    addYMD(y,8,11,'山の日');
-    add(nthWeekday(y,9,1,3),'敬老の日');
-    addYMD(y,9,shubunDays[y],'秋分の日');
+    addYMD(y,1,1,'元日'); add(nthWeekday(y,1,1,2),'成人の日');
+    addYMD(y,2,11,'建国記念の日'); addYMD(y,2,23,'天皇誕生日');
+    addYMD(y,3,shunbunDays[y],'春分の日'); addYMD(y,4,29,'昭和の日');
+    addYMD(y,5,3,'憲法記念日'); addYMD(y,5,4,'みどりの日'); addYMD(y,5,5,'こどもの日');
+    add(nthWeekday(y,7,1,3),'海の日'); addYMD(y,8,11,'山の日');
+    add(nthWeekday(y,9,1,3),'敬老の日'); addYMD(y,9,shubunDays[y],'秋分の日');
     add(nthWeekday(y,10,1,2),'スポーツの日');
-    addYMD(y,11,3,'文化の日');
-    addYMD(y,11,23,'勤労感謝の日');
+    addYMD(y,11,3,'文化の日'); addYMD(y,11,23,'勤労感謝の日');
   }
-  // 振替休日（祝日が日曜→翌月曜）
   const toAdd = {};
   Object.entries(HOLIDAY_MAP).forEach(([dateStr]) => {
     const d = new Date(dateStr);
     if (d.getDay() === 0) {
       const next = new Date(d); next.setDate(d.getDate() + 1);
-      const nk = ds(next);
-      if (!HOLIDAY_MAP[nk]) toAdd[nk] = '振替休日';
+      const nk = ds(next); if (!HOLIDAY_MAP[nk]) toAdd[nk] = '振替休日';
     }
   });
   Object.assign(HOLIDAY_MAP, toAdd);
-  // 手動補足
-  ['2025-05-06','2026-05-06','2028-01-03'].forEach(s => {
-    if (!HOLIDAY_MAP[s]) HOLIDAY_MAP[s] = '振替休日';
-  });
+  ['2025-05-06','2026-05-06','2028-01-03'].forEach(s => { if (!HOLIDAY_MAP[s]) HOLIDAY_MAP[s] = '振替休日'; });
 })();
 function isHoliday(ds) { return !!HOLIDAY_MAP[ds]; }
 
 // ── HELPERS ──
 const DAY = ['日','月','火','水','木','金','土'];
-function toDateStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
+function toDateStr(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function getWeekDates(offset = 0) {
   const t = new Date(); t.setHours(0,0,0,0); t.setDate(t.getDate() + offset * 7);
   return Array.from({length:7}, (_,i) => { const d=new Date(t); d.setDate(t.getDate()+i); return d; });
@@ -155,20 +134,17 @@ function schedulePush() {
 function loadGoal() { return localStorage.getItem(GOAL_KEY + '_' + weekOffset) || ''; }
 function saveGoal(v) { localStorage.setItem(GOAL_KEY + '_' + weekOffset, v); }
 
-// ── PUSH NOTIFICATION ──
+// ── SERVICE WORKER ──
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return null;
   try {
-    // 相対パスで登録（サブディレクトリ対応）
     const swUrl    = new URL('./sw.js', location.href).href;
     const scopeUrl = new URL('./',      location.href).href;
-    const reg = await navigator.serviceWorker.register(swUrl, { scope: scopeUrl });
-    return reg;
+    return await navigator.serviceWorker.register(swUrl, { scope: scopeUrl });
   } catch(e) { console.error('SW registration failed:', e); return null; }
 }
 
-// VAPIDキーを起動時にキャッシュ
-let cachedVapidKey = null;
+// ── VAPID KEY ──
 async function getVapidPublicKey() {
   if (cachedVapidKey) return cachedVapidKey;
   try {
@@ -180,125 +156,220 @@ async function getVapidPublicKey() {
 }
 
 function urlBase64ToUint8Array(base64String) {
-  // 余分な空白・改行を除去
   const cleaned = base64String.trim();
-  // Base64url → Base64 に変換
   const base64  = cleaned.replace(/-/g, '+').replace(/_/g, '/');
-  // パディング補完
   const padded  = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
   try {
     const raw = atob(padded);
     return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
   } catch(e) {
-    throw new Error('VAPIDキーのBase64デコード失敗: ' + e.message + ' / key=' + base64String.slice(0,20) + '...');
+    throw new Error('VAPIDキーのBase64デコード失敗: ' + e.message);
   }
 }
 
+// ── この端末の購読情報を取得 ──
+async function getThisDeviceSub() {
+  try {
+    const swUrl = new URL('./sw.js', location.href).href;
+    const reg   = await navigator.serviceWorker.getRegistration(swUrl);
+    if (!reg) return null;
+    return await reg.pushManager.getSubscription();
+  } catch(e) { return null; }
+}
+
+// ── 購読 ──
 async function subscribeNotification() {
   if (!config.userId) { showToast('先にユーザーIDを設定してください'); return; }
   const reg = await registerServiceWorker();
-  if (!reg) { showToast('Service Workerが使えません'); return; }
-
+  if (!reg) { showDebugMsg('Service Workerが使えません'); return; }
   const vapidKey = await getVapidPublicKey();
-  if (!vapidKey) {
-    showDebugMsg('❌ VAPIDキー取得失敗\nWorker URLに /vapidPublicKey へアクセスできませんでした。');
-    return;
-  }
-
+  if (!vapidKey) { showDebugMsg('VAPIDキー取得失敗'); return; }
   try {
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly:      true,
       applicationServerKey: urlBase64ToUint8Array(vapidKey),
     });
     const postRes = await fetch(`${WORKER_URL}/subscribe/${config.userId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify(sub.toJSON()),
     });
-    if (!postRes.ok) {
-      showDebugMsg(`❌ 購読情報の送信失敗\nHTTP ${postRes.status}\nSUBS_KVのバインドを確認してください。`);
-      return;
-    }
-    localStorage.setItem('todoweek_sub', JSON.stringify(sub.toJSON()));
-    updateNotifUI();
+    if (!postRes.ok) { showDebugMsg(`購読情報の送信失敗 HTTP ${postRes.status}`); return; }
+    localStorage.setItem(SUB_KEY, JSON.stringify(sub.toJSON()));
     showToast('通知を許可しました 🔔');
+    updateNotifHeaderBtn();
+    await refreshNotifModal();
   } catch(e) {
-    showDebugMsg(`❌ Subscribe失敗\n${e.name}: ${e.message}`);
+    showDebugMsg(`Subscribe失敗\n${e.name}: ${e.message}`);
   }
 }
 
-async function unsubscribeNotification() {
-  const swUrl = new URL('./sw.js', location.href).href;
-  const reg   = await navigator.serviceWorker.getRegistration(swUrl);
-  if (!reg) return;
-  const sub = await reg.pushManager.getSubscription();
+// ── 購読解除（この端末のみ） ──
+async function unsubscribeThisDevice() {
+  const sub = await getThisDeviceSub();
   if (sub) {
     if (config.userId) {
       await fetch(`${WORKER_URL}/subscribe/${config.userId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'DELETE', headers: {'Content-Type':'application/json'},
         body: JSON.stringify(sub.toJSON()),
       });
     }
     await sub.unsubscribe();
   }
-  localStorage.removeItem('todoweek_sub');
-  updateNotifUI();
-  showToast('通知を解除しました');
+  localStorage.removeItem(SUB_KEY);
+  showToast('この端末の通知を解除しました');
+  updateNotifHeaderBtn();
+  await refreshNotifModal();
 }
 
-// ボタンから直接呼ばれる（非同期タイミング問題を回避）
+// ── 特定端末の購読を削除（管理画面から） ──
+async function deleteDeviceSub(endpoint) {
+  if (!config.userId) return;
+  // もしこの端末のendpointなら、SWの購読も解除
+  const thisSub = await getThisDeviceSub();
+  if (thisSub && thisSub.endpoint === endpoint) {
+    await thisSub.unsubscribe();
+    localStorage.removeItem(SUB_KEY);
+    updateNotifHeaderBtn();
+  }
+  await fetch(`${WORKER_URL}/subscribe/${config.userId}`, {
+    method: 'DELETE', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ endpoint }),
+  });
+  showToast('端末を削除しました');
+  await refreshNotifModal();
+}
+
+// ── ヘッダーの🔔ボタン状態更新 ──
+async function updateNotifHeaderBtn() {
+  const btn = document.getElementById('notif-header-btn');
+  if (!btn) return;
+  const sub = await getThisDeviceSub();
+  if (sub) {
+    btn.classList.add('active');
+    btn.title = '通知オン';
+  } else {
+    btn.classList.remove('active');
+    btn.title = '通知設定';
+  }
+}
+
+// ── 通知モーダルを開く ──
+window.showNotifModal = async function() {
+  document.getElementById('notif-debug-msg').style.display = 'none';
+  document.getElementById('notif-overlay').classList.add('open');
+  await refreshNotifModal();
+};
+
+// ── 通知モーダルの内容を更新 ──
+async function refreshNotifModal() {
+  const statusText = document.getElementById('notif-status-text');
+  const toggleBtn  = document.getElementById('notif-toggle-btn');
+  const devicesList = document.getElementById('notif-devices-list');
+
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+    statusText.textContent = 'このブラウザでは通知を使えません';
+    toggleBtn.textContent  = '使用不可';
+    toggleBtn.className    = 'btn-notif disabled';
+    return;
+  }
+
+  const perm   = Notification.permission;
+  const thisSub = await getThisDeviceSub();
+
+  if (perm === 'denied') {
+    statusText.textContent = 'ブロックされています（設定から変更してください）';
+    toggleBtn.textContent  = '許可できません';
+    toggleBtn.className    = 'btn-notif disabled';
+  } else if (thisSub) {
+    statusText.textContent = 'オン（毎日20:00に通知）';
+    toggleBtn.textContent  = 'オフにする';
+    toggleBtn.className    = 'btn-notif off';
+    toggleBtn.dataset.state = 'on';
+  } else {
+    statusText.textContent = '通知はオフです';
+    toggleBtn.textContent  = 'オンにする';
+    toggleBtn.className    = 'btn-notif';
+    toggleBtn.dataset.state = 'off';
+  }
+
+  // 登録済み端末一覧を取得して表示
+  devicesList.innerHTML = '<div style="font-size:13px;color:var(--text3);">読込中…</div>';
+  if (!config.userId) {
+    devicesList.innerHTML = '<div style="font-size:13px;color:var(--text3);">ユーザーIDが未設定です</div>';
+    return;
+  }
+
+  try {
+    const r    = await fetch(`${WORKER_URL}/devices/${config.userId}`);
+    const subs = await r.json();
+    if (!subs.length) {
+      devicesList.innerHTML = '<div style="font-size:13px;color:var(--text3);">登録済み端末はありません</div>';
+      return;
+    }
+    devicesList.innerHTML = '';
+    subs.forEach((sub, i) => {
+      const isCurrent = thisSub && thisSub.endpoint === sub.endpoint;
+      const item = document.createElement('div');
+      item.className = 'device-item';
+      item.innerHTML = `
+        <div class="device-info">
+          <div class="device-name ${isCurrent ? 'current' : ''}">
+            端末 ${i + 1}${isCurrent ? '（この端末）' : ''}
+          </div>
+          <div class="device-endpoint">${sub.endpoint.slice(0, 50)}…</div>
+        </div>
+        <button class="btn-device-delete ${isCurrent ? 'current' : ''}"
+                onclick="deleteDeviceSub('${sub.endpoint}')">
+          ${isCurrent ? 'オフにする' : '削除'}
+        </button>`;
+      devicesList.appendChild(item);
+    });
+  } catch(e) {
+    devicesList.innerHTML = '<div style="font-size:13px;color:var(--text3);">取得に失敗しました</div>';
+  }
+}
+
+// ── 通知ボタン押下ハンドラ ──
 window.handleNotifBtn = async function() {
-  const btn = document.getElementById('notif-btn');
-  // 現在の状態を見て購読 or 解除
-  if (btn.dataset.state === 'subscribed') {
-    await unsubscribeNotification();
+  const btn = document.getElementById('notif-toggle-btn');
+  if (btn.dataset.state === 'on') {
+    await unsubscribeThisDevice();
   } else {
     await subscribeNotification();
   }
 };
 
-async function updateNotifUI() {
-  const btn  = document.getElementById('notif-btn');
-  const text = document.getElementById('notif-status-text');
-  if (!btn || !text) return;
-
-  if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-    text.textContent  = 'このブラウザでは通知を使えません';
-    btn.style.display = 'none';
-    return;
-  }
-  const perm = Notification.permission;
-  if (perm === 'denied') {
-    text.textContent = '通知がブロックされています（設定から変更してください）';
-    btn.textContent  = '許可できません';
-    btn.className    = 'btn-notif denied';
-    btn.dataset.state = 'denied';
-    return;
-  }
-
-  let isSubscribed = false;
+// ── テスト通知 ──
+window.sendTestNotif = async function() {
+  if (!config.userId) { showToast('ユーザーIDが未設定です'); return; }
+  const btn = document.getElementById('notif-test-btn');
+  btn.disabled = true; btn.textContent = '送信中…';
   try {
-    const swUrl = new URL('./sw.js', location.href).href;
-    const reg   = await navigator.serviceWorker.getRegistration(swUrl);
-    if (reg) {
-      const sub = await reg.pushManager.getSubscription();
-      isSubscribed = !!sub;
+    const r = await fetch(`${WORKER_URL}/test-push/${config.userId}`);
+    const t = await r.text();
+    if (t.includes('OK')) {
+      showToast('テスト通知を送信しました 📨');
+    } else {
+      showToast('送信失敗: ' + t.slice(0, 50));
     }
-  } catch(e) {}
-
-  if (isSubscribed) {
-    text.textContent  = '通知がオンです（毎日20:00に送信）';
-    btn.textContent   = '通知を解除する';
-    btn.className     = 'btn-notif granted';
-    btn.dataset.state = 'subscribed';
-  } else {
-    text.textContent  = '通知を許可するとリマインドが届きます';
-    btn.textContent   = '許可する';
-    btn.className     = 'btn-notif';
-    btn.dataset.state = 'unsubscribed';
+  } catch(e) {
+    showToast('通信エラー');
   }
+  btn.disabled = false; btn.textContent = '📨 テスト通知を送る';
+};
+
+function showDebugMsg(msg) {
+  const box = document.getElementById('notif-debug-msg');
+  if (box) { box.textContent = msg; box.style.display = 'block'; }
 }
+
+// 通知モーダルを閉じる
+document.getElementById('notif-close-btn').addEventListener('click', () => {
+  document.getElementById('notif-overlay').classList.remove('open');
+});
+document.getElementById('notif-overlay').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
 
 // ── RENDER ──
 function render() {
@@ -354,13 +425,11 @@ function render() {
   renderOverdue();
 }
 
-// ── TASK ELEMENT ──
 function makeTaskEl(task, isOverdue = false) {
   const div = document.createElement('div');
   div.className = 'task-item' + (task.done ? ' done' : '');
   const c = getColor(task.subject);
-  const taskBg = (task.format && task.format.bg) ? task.format.bg : c.bg;
-  div.style.background  = taskBg;
+  div.style.background  = (task.format && task.format.bg) ? task.format.bg : c.bg;
   div.style.borderColor = c.fg;
 
   const cb = document.createElement('div'); cb.className = 'task-cb';
@@ -371,12 +440,11 @@ function makeTaskEl(task, isOverdue = false) {
 
   const lbl = document.createElement('div'); lbl.className = 'task-label';
   const titleEl = document.createElement('div');
-  const baseFg = (task.format && task.format.fg) ? task.format.fg : c.fg;
   const f = task.format || {};
   let td = ''; if (f.underline) td = 'underline'; else if (f['double-underline']) td = 'underline double';
-  titleEl.textContent         = task.title;
-  titleEl.style.color         = baseFg;
-  titleEl.style.fontWeight    = f.bold ? '700' : '';
+  titleEl.textContent          = task.title;
+  titleEl.style.color          = (f.fg) ? f.fg : c.fg;
+  titleEl.style.fontWeight     = f.bold ? '700' : '';
   titleEl.style.textDecoration = td;
   lbl.appendChild(titleEl);
 
@@ -388,8 +456,7 @@ function makeTaskEl(task, isOverdue = false) {
     const tag = document.createElement('span'); tag.className = 'subject-tag';
     tag.textContent = task.subject;
     tag.style.background = 'transparent';
-    tag.style.color      = c.fg;
-    tag.style.border     = `1.5px solid ${c.fg}`;
+    tag.style.color = c.fg; tag.style.border = `1.5px solid ${c.fg}`;
     lbl.appendChild(tag);
   }
   if (task.remind && task.remind !== '0') {
@@ -431,7 +498,7 @@ window.toggleFmt = function(key) {
 };
 
 function buildColorPicker(rowId, palette, selectedVal, onSelect) {
-  const row = document.getElementById(rowId); row.innerHTML = '';
+  const row = document.getElementById(rowId); if (!row) return; row.innerHTML = '';
   palette.forEach(color => {
     const chip = document.createElement('div');
     chip.className = 'color-chip' + (color === null ? ' none-chip' : '');
@@ -447,12 +514,8 @@ function updateFmtUI() {
     const btn = document.getElementById('fmt-' + k);
     if (btn) btn.classList.toggle('active', !!fmt[k]);
   });
-  buildColorPicker('color-fg-row', FG_PALETTE, fmt.fg, color => {
-    fmt.fg = color; updateFmtUI();
-  });
-  buildColorPicker('color-bg-row', BG_PALETTE, fmt.bg, color => {
-    fmt.bg = color; updateFmtUI();
-  });
+  buildColorPicker('color-fg-row', FG_PALETTE, fmt.fg, color => { fmt.fg = color; updateFmtUI(); });
+  buildColorPicker('color-bg-row', BG_PALETTE, fmt.bg, color => { fmt.bg = color; updateFmtUI(); });
   updatePreview();
 }
 
@@ -464,30 +527,24 @@ function initFmtFromSubject(subject) {
 }
 function initFmtFromTask(task) {
   const f = task.format || {};
-  fmt.bold              = !!f.bold;
-  fmt.underline         = !!f.underline;
-  fmt['double-underline'] = !!f['double-underline'];
+  fmt.bold = !!f.bold; fmt.underline = !!f.underline; fmt['double-underline'] = !!f['double-underline'];
   fmt.fg = f.fg ?? null; fmt.bg = f.bg ?? null;
   updateFmtUI();
 }
 function updatePreview() {
-  const titleVal = document.getElementById('f-title').value || 'テキスト';
-  const prev = document.getElementById('format-preview');
+  const titleVal = document.getElementById('f-title')?.value || 'テキスト';
+  const prev = document.getElementById('format-preview'); if (!prev) return;
   let td = '';
-  if (fmt.underline)           td = 'underline';
-  if (fmt['double-underline']) td = 'underline double';
-  prev.style.fontWeight      = fmt.bold ? '700' : '400';
-  prev.style.textDecoration  = td;
-  prev.style.color           = fmt.fg || '';
-  prev.style.backgroundColor = fmt.bg || '';
-  prev.textContent           = titleVal;
+  if (fmt.underline) td = 'underline'; if (fmt['double-underline']) td = 'underline double';
+  prev.style.fontWeight = fmt.bold ? '700' : '400';
+  prev.style.textDecoration = td;
+  prev.style.color = fmt.fg || ''; prev.style.backgroundColor = fmt.bg || '';
+  prev.textContent = titleVal;
 }
 
 window.handleSubjectChange = function(val) {
   document.getElementById('custom-subject-group').style.display = (val === 'カスタム') ? 'block' : 'none';
-  const subjName = val === 'カスタム'
-    ? (document.getElementById('f-custom-subject').value.trim() || 'カスタム')
-    : val;
+  const subjName = val === 'カスタム' ? (document.getElementById('f-custom-subject').value.trim() || 'カスタム') : val;
   const c = getColor(subjName);
   fmt.fg = c.fg === DEFAULT_COLOR.fg ? null : c.fg;
   fmt.bg = c.bg === DEFAULT_COLOR.bg ? null : c.bg;
@@ -521,8 +578,8 @@ function openModal(id, dateStr) {
     }
     initFmtFromTask(t);
     document.getElementById('modal-actions').innerHTML = `
-      <button class="btn-primary"   id="modal-save">保存する</button>
-      <button class="btn-danger"    id="modal-delete">削除</button>
+      <button class="btn-primary" id="modal-save">保存する</button>
+      <button class="btn-danger" id="modal-delete">削除</button>
       <button class="btn-secondary" id="modal-cancel">キャンセル</button>`;
     document.getElementById('modal-delete').addEventListener('click', deleteTask);
   } else {
@@ -532,7 +589,7 @@ function openModal(id, dateStr) {
     document.getElementById('f-custom-subject').value = '';
     initFmtFromSubject('なし');
     document.getElementById('modal-actions').innerHTML = `
-      <button class="btn-primary"   id="modal-save">保存する</button>
+      <button class="btn-primary" id="modal-save">保存する</button>
       <button class="btn-secondary" id="modal-cancel">キャンセル</button>`;
   }
   document.getElementById('modal-save').addEventListener('click', saveTask);
@@ -552,23 +609,19 @@ function getSubjectValue() {
 }
 
 function saveTask() {
-  const title  = document.getElementById('f-title').value.trim();
+  const title = document.getElementById('f-title').value.trim();
   if (!title) { showToast('タイトルを入力してください'); return; }
   const finalDate = editingId ? document.getElementById('f-date').value : currentDateStr;
   if (!finalDate) { showToast('日付が設定されていません'); return; }
   const remind  = document.getElementById('f-remind').value;
   const subject = getSubjectValue();
-  const format  = {
-    bold: fmt.bold, underline: fmt.underline,
-    'double-underline': fmt['double-underline'],
-    fg: fmt.fg, bg: fmt.bg,
-  };
+  const format  = { bold:fmt.bold, underline:fmt.underline, 'double-underline':fmt['double-underline'], fg:fmt.fg, bg:fmt.bg };
   if (editingId) {
     const i = tasks.findIndex(t => t.id === editingId);
-    if (i >= 0) tasks[i] = { ...tasks[i], title, date: finalDate, remind, subject, format };
+    if (i >= 0) tasks[i] = { ...tasks[i], title, date:finalDate, remind, subject, format };
     showToast('更新しました ✓');
   } else {
-    tasks.push({ id: genId(), title, date: finalDate, remind, subject, done: false, format });
+    tasks.push({ id:genId(), title, date:finalDate, remind, subject, done:false, format });
     showToast('追加しました ✓');
   }
   schedulePush(); closeModal(); render();
@@ -583,8 +636,8 @@ function deleteTask() {
 // ── SETUP ──
 function showSetup() {
   document.getElementById('setup-uid').value = config.userId || '';
-  const wrap    = document.getElementById('setup-current-user-wrap');
-  const uidEl   = document.getElementById('setup-current-uid');
+  const wrap   = document.getElementById('setup-current-user-wrap');
+  const uidEl  = document.getElementById('setup-current-uid');
   const btnSkip = document.getElementById('setup-skip');
   const btnOut  = document.getElementById('setup-logout');
   if (config.userId) {
@@ -595,11 +648,14 @@ function showSetup() {
   }
   document.getElementById('setup-overlay').classList.add('open');
   setTimeout(() => document.getElementById('setup-uid').focus(), 100);
-  updateNotifUI();
 }
 
 document.getElementById('setup-uid').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('setup-save').click();
+});
+// 画面外タップで閉じる
+document.getElementById('setup-overlay').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
 });
 document.getElementById('setup-save').addEventListener('click', async () => {
   const uid = document.getElementById('setup-uid').value.trim().replace(/[^a-zA-Z0-9_-]/g,'');
@@ -616,7 +672,7 @@ document.getElementById('setup-skip').addEventListener('click', () => {
 });
 document.getElementById('setup-logout').addEventListener('click', async () => {
   if (!confirm('ログアウトしますか？\nこのデバイスのローカルデータも削除されます。')) return;
-  await unsubscribeNotification();
+  await unsubscribeThisDevice();
   config = {}; tasks = [];
   localStorage.removeItem(CFG_KEY); localStorage.removeItem(TASKS_KEY);
   document.getElementById('setup-overlay').classList.remove('open');
@@ -625,12 +681,17 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
 });
 
 // ── EVENTS ──
-document.getElementById('modal-overlay').addEventListener('click', function(e) {
-  if (e.target === this) closeModal();
-});
+document.getElementById('modal-overlay').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('sync-status').addEventListener('click', showSetup);
 document.getElementById('logo-btn').addEventListener('click', showSetup);
+
+// setup-overlay: ログイン済みの場合のみ外クリックで閉じる
+document.getElementById('setup-overlay').addEventListener('click', function(e) {
+  if (e.target === this && config.userId) {
+    this.classList.remove('open');
+  }
+});
 
 // ── TOAST ──
 function showToast(msg) {
@@ -639,20 +700,10 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-function showDebugMsg(msg) {
-  // 設定画面が開いていればそこに表示、なければalert
-  const box = document.getElementById('debug-msg');
-  if (box) {
-    box.textContent = msg;
-    box.style.display = 'block';
-  } else {
-    alert(msg);
-  }
-}
-
 // ── INIT ──
 registerServiceWorker();
-getVapidPublicKey(); // 起動時にキャッシュしておく
+getVapidPublicKey();
 render();
+updateNotifHeaderBtn();
 if (!config.userId) { showSetup(); } else { pullFromCloud(); }
 setInterval(() => { const n=new Date(); if(n.getHours()===0&&n.getMinutes()===0) render(); }, 60000);
