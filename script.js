@@ -425,14 +425,30 @@ function makeTaskEl(task, isOverdue = false) {
   }
   if (task.remind && task.remind !== '0') {
     const ri = document.createElement('div'); ri.className='remind-info';
-    ri.textContent = `⏰ ${task.remind}日前`; lbl.appendChild(ri);
+    const timeLabel = (!task.notifTime || task.notifTime === 'none') ? '' : ` ${task.notifTime}`;
+    ri.textContent = `⏰ ${task.remind}日前${timeLabel}`; lbl.appendChild(ri);
   }
   div.appendChild(cb); div.appendChild(lbl);
   div.addEventListener('click', ()=>openModal(task.id));
   return div;
 }
 
-// ── OVERDUE ──
+// ── 通知時刻プルダウン生成（5分刻み） ──
+function buildNotifTimeSelect(selectedVal) {
+  const sel = document.getElementById('f-notif-time');
+  sel.innerHTML = '<option value="none">通知なし</option>';
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 5) {
+      const val   = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+      const label = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+      const opt   = document.createElement('option');
+      opt.value       = val;
+      opt.textContent = label;
+      if (val === selectedVal) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
+}
 function renderOverdue() {
   const todayStr = getTodayStr();
   const od = tasks.filter(t => !t.done && t.date < todayStr);
@@ -530,6 +546,7 @@ function openModal(id, dateStr) {
     document.getElementById('f-title').value  = t.title  || '';
     document.getElementById('f-date').value   = t.date   || '';
     document.getElementById('f-remind').value = t.remind || '0';
+    buildNotifTimeSelect(t.notifTime || '07:00');
     const presets = ['なし','国語','数学','英語','化学','生物','日本史','情報'];
     if (presets.includes(t.subject)) {
       document.getElementById('f-subject').value = t.subject;
@@ -551,6 +568,7 @@ function openModal(id, dateStr) {
     document.getElementById('f-remind').value  = '0';
     document.getElementById('f-subject').value = 'なし';
     document.getElementById('f-custom-subject').value = '';
+    buildNotifTimeSelect('07:00');
     initFmtFromSubject('なし');
     document.getElementById('modal-actions').innerHTML = `
       <button class="btn-primary" id="modal-save">保存する</button>
@@ -577,15 +595,16 @@ function saveTask() {
   if (!title) { showToast('タイトルを入力してください'); return; }
   const finalDate = editingId ? document.getElementById('f-date').value : currentDateStr;
   if (!finalDate) { showToast('日付が設定されていません'); return; }
-  const remind  = document.getElementById('f-remind').value;
-  const subject = getSubjectValue();
-  const format  = { bold:fmt.bold, underline:fmt.underline, 'double-underline':fmt['double-underline'], fg:fmt.fg, bg:fmt.bg };
+  const remind    = document.getElementById('f-remind').value;
+  const notifTime = document.getElementById('f-notif-time').value; // 'none' or 'HH:MM'
+  const subject   = getSubjectValue();
+  const format    = { bold:fmt.bold, underline:fmt.underline, 'double-underline':fmt['double-underline'], fg:fmt.fg, bg:fmt.bg };
   if (editingId) {
     const i = tasks.findIndex(t => t.id === editingId);
-    if (i >= 0) tasks[i] = { ...tasks[i], title, date:finalDate, remind, subject, format };
+    if (i >= 0) tasks[i] = { ...tasks[i], title, date:finalDate, remind, notifTime, subject, format };
     showToast('更新しました ✓');
   } else {
-    tasks.push({ id:genId(), title, date:finalDate, remind, subject, done:false, format });
+    tasks.push({ id:genId(), title, date:finalDate, remind, notifTime, subject, done:false, format });
     showToast('追加しました ✓');
   }
   schedulePush(); closeModal(); render();
