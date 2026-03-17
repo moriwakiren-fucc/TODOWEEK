@@ -269,6 +269,8 @@ async function refreshNotifModal() {
     statusText.textContent = 'このブラウザでは通知を使えません';
     toggleBtn.textContent  = '使用不可';
     toggleBtn.className    = 'btn-notif disabled';
+    const testBtn = document.getElementById('notif-test-btn');
+    if (testBtn) { testBtn.disabled = true; testBtn.classList.add('disabled'); }
     return;
   }
 
