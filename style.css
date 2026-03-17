@@ -330,13 +330,13 @@ thead tr#date-row th.hol-col  .day-num { color: #cc2222; }
 #setup-overlay.open { display: flex; animation: fadeIn 0.2s ease; }
 #setup-box {
   background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius);
-  padding: 32px 28px; width: 100%; max-width: 420px;
+  padding: 24px 22px; width: 100%; max-width: 420px;
   box-shadow: var(--shadow-lg); animation: scaleIn 0.2s cubic-bezier(.22,1,.36,1);
-  max-height: 90dvh; overflow-y: auto;
+  max-height: min(560px, 85dvh); overflow-y: auto;
 }
 @keyframes scaleIn { from{transform:scale(0.94);opacity:0} to{transform:scale(1);opacity:1} }
-#setup-box h2 { font-family: 'DM Serif Display', serif; color: var(--accent); font-size: 24px; font-weight: 400; margin-bottom: 10px; }
-#setup-box > p { color: var(--text2); font-size: 15px; line-height: 1.7; margin-bottom: 22px; }
+#setup-box h2 { font-family: 'DM Serif Display', serif; color: var(--accent); font-size: 22px; font-weight: 400; margin-bottom: 6px; }
+#setup-box > p { color: var(--text2); font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
 #setup-current-user-wrap {
   display: none; align-items: center; gap: 10px;
   background: var(--accent-light); border: 1.5px solid #b8caff;
@@ -344,8 +344,8 @@ thead tr#date-row th.hol-col  .day-num { color: #cc2222; }
 }
 #setup-current-user-wrap .label { font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; }
 #setup-current-uid { font-size: 16px; font-weight: 700; color: var(--text); font-family: 'DM Serif Display', serif; word-break: break-all; flex: 1; }
-.setup-field { margin-bottom: 18px; }
-.setup-field label { display: block; font-size: 13px; font-weight: 700; color: var(--text2); margin-bottom: 7px; letter-spacing: 0.04em; }
+.setup-field { margin-bottom: 12px; }
+.setup-field label { display: block; font-size: 13px; font-weight: 700; color: var(--text2); margin-bottom: 6px; letter-spacing: 0.04em; }
 .setup-field input {
   width: 100%; background: var(--surface2); border: 1.5px solid var(--border);
   border-radius: 10px; color: var(--text); font-size: 18px;
@@ -361,18 +361,18 @@ thead tr#date-row th.hol-col  .day-num { color: #cc2222; }
   transition: background 0.15s; box-shadow: 0 3px 10px rgba(61,110,245,0.28);
 }
 #setup-save:hover { background: var(--accent-dark); }
-#setup-hint { font-size: 13px; color: var(--text3); margin-top: 12px; text-align: center; line-height: 1.6; }
+#setup-hint { font-size: 12px; color: var(--text3); margin-top: 8px; text-align: center; line-height: 1.5; }
 #setup-logout {
   display: none; width: 100%; background: #fff0f3; color: var(--accent2);
-  border: 1.5px solid #ffc8d6; border-radius: 12px; font-size: 16px; font-weight: 700;
-  font-family: 'Noto Sans JP', sans-serif; padding: 13px; cursor: pointer;
-  margin-top: 16px; transition: background 0.15s;
+  border: 1.5px solid #ffc8d6; border-radius: 12px; font-size: 15px; font-weight: 700;
+  font-family: 'Noto Sans JP', sans-serif; padding: 11px; cursor: pointer;
+  margin-top: 10px; transition: background 0.15s;
 }
 #setup-logout:hover { background: #ffe0e8; }
 #setup-skip {
-  background: none; border: none; color: var(--text3); font-size: 14px;
-  width: 100%; margin-top: 10px; cursor: pointer; text-decoration: underline;
-  padding: 8px; font-family: 'Noto Sans JP', sans-serif;
+  background: none; border: none; color: var(--text3); font-size: 13px;
+  width: 100%; margin-top: 6px; cursor: pointer; text-decoration: underline;
+  padding: 6px; font-family: 'Noto Sans JP', sans-serif;
 }
 #setup-skip:hover { color: var(--text2); }
 
