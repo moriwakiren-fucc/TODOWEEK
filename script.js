@@ -309,18 +309,14 @@ window.sendTestNotif = async function() {
   const btn = document.getElementById('notif-test-btn');
   btn.disabled = true; btn.innerHTML = '送信中…';
   try {
-    const url = `${WORKER_URL}/test-push/${config.userId}`;
-    alert('送信先: ' + url);
-    const r = await fetch(url);
+    const r = await fetch(`${WORKER_URL}/test-push/${config.userId}`);
     const t = await r.text();
-    alert('結果: ' + t.slice(0, 100));
     if (t.includes('OK')) {
       showToast('テスト通知を送信しました 📨');
     } else {
       showToast('送信失敗: ' + t.slice(0, 50));
     }
   } catch(e) {
-    alert('エラー: ' + e.message);
     showToast('通信エラー');
   }
   btn.disabled = false; btn.innerHTML = '📨 テスト通知を送る';
