@@ -27,6 +27,7 @@
       <div id="sync-dot"></div>
       <span id="sync-label">未設定</span>
     </div>
+    <button id="notif-header-btn" class="notif-header-btn" title="通知設定" onclick="showNotifModal()">🔔</button>
   </header>
 
   <!-- ── MAIN TABLE ── -->
@@ -107,10 +108,10 @@
     </div>
 
     <!-- 書式 -->
-    <div class="form-group" id="format-group">
+    <div class="form-group">
       <label class="form-label">書式</label>
       <div class="format-section">
-        <div class="format-row" id="format-style-row">
+        <div class="format-row">
           <button type="button" class="fmt-btn" id="fmt-bold"
                   onclick="toggleFmt('bold')" title="太字">
             <strong>B</strong>
@@ -161,20 +162,43 @@
     <button id="setup-save" tabindex="2">保存して同期開始</button>
     <p id="setup-hint">英数字・ハイフン・アンダーバーのみ使えます。<br>他の人と同じIDにすると共有されます。</p>
 
-      <div id="notif-section">
-      <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
-      <div class="setup-notif-row">
-        <div>
-          <div class="setup-notif-title">🔔 リマインド通知</div>
-          <div id="notif-status-text" class="setup-notif-sub">確認中…</div>
-        </div>
-        <button id="notif-btn" class="btn-notif" onclick="handleNotifBtn()">許可する</button>
-      </div>
-      <div id="debug-msg" style="display:none;margin-top:12px;background:#fff0f0;border:1px solid #ffaaaa;border-radius:8px;padding:10px 12px;font-size:12px;color:#cc2222;white-space:pre-wrap;word-break:break-all;font-family:monospace;"></div>
-    </div>
-
     <button id="setup-logout" tabindex="3">ログアウト（このデバイスのデータを削除）</button>
     <button id="setup-skip" tabindex="4">スキップ（このデバイスのみで使う）</button>
+  </div>
+</div>
+
+
+<!-- ── 通知モーダル ── -->
+<div id="notif-overlay">
+  <div id="notif-box">
+    <div class="notif-modal-title">
+      <span>🔔 通知設定</span>
+      <button id="notif-close-btn" class="modal-close">✕</button>
+    </div>
+
+    <!-- この端末の通知状態 -->
+    <div class="notif-status-card" id="notif-status-card">
+      <div class="notif-status-info">
+        <div class="notif-status-label">この端末の通知</div>
+        <div class="notif-status-text" id="notif-status-text">確認中…</div>
+      </div>
+      <button class="btn-notif" id="notif-toggle-btn" onclick="handleNotifBtn()">確認中</button>
+    </div>
+
+    <!-- デバッグメッセージ -->
+    <div id="notif-debug-msg"></div>
+
+    <!-- テスト通知 -->
+    <div class="notif-section-divider"></div>
+    <button class="btn-test-notif" id="notif-test-btn" onclick="sendTestNotif()">
+      📨 テスト通知を送る
+    </button>
+    <div class="notif-test-hint">すべての登録端末に送信されます</div>
+
+    <!-- 登録済み端末一覧 -->
+    <div class="notif-section-divider"></div>
+    <div class="notif-devices-title">登録済み端末</div>
+    <div id="notif-devices-list"></div>
   </div>
 </div>
 
