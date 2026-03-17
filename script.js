@@ -592,7 +592,7 @@ function openModal(id, dateStr) {
     document.getElementById('modal-delete').addEventListener('click', deleteTask);
   } else {
     document.getElementById('f-title').value   = '';
-    document.getElementById('f-remind').value  = '0';
+    document.getElementById('f-remind').value  = '2';
     document.getElementById('f-subject').value = 'なし';
     document.getElementById('f-custom-subject').value = '';
     buildNotifTimeSelects('07:00');
