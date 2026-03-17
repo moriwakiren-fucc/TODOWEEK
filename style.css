@@ -260,6 +260,15 @@ thead tr#date-row th.hol-col  .day-num { color: #cc2222; }
   background-repeat: no-repeat; background-position: right 16px center; padding-right: 42px;
 }
 
+.time-select-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.time-select-h { flex: 1; }
+.time-select-m { flex: 1; }
+.time-select-sep {
+  font-size: 22px; font-weight: 700; color: var(--text2); flex-shrink: 0;
+}
+
 /* FORMAT UI */
 .format-section {
   background: var(--surface2); border: 1.5px solid var(--border);
