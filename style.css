@@ -81,6 +81,14 @@ header {
   border-bottom: 2px solid #d4c060; padding: 6px 8px;
 }
 .goal-nav { display: flex; align-items: center; gap: 6px; }
+.goal-nav-btn {
+  background: #f5e88a; border: 1px solid #c8b830; border-radius: 7px; color: #7a6600;
+  font-size: 18px; width: 34px; height: 34px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: background 0.15s; font-weight: 700; line-height: 1;
+}
+.goal-nav-btn:hover  { background: #e8d660; }
+.goal-nav-btn:active { background: #c8b830; }
 #goal-input {
   flex: 1; background: transparent; border: none; outline: none;
   font-size: 16px; font-family: 'Noto Sans JP', sans-serif;
