@@ -170,8 +170,8 @@ function schedulePush() {
 }
 
 // ── GOAL ──
-function loadGoal() { return localStorage.getItem(GOAL_KEY) || ''; }
-function saveGoal(v) { localStorage.setItem(GOAL_KEY, v); }
+function loadGoal() { return localStorage.getItem(GOAL_KEY + '_' + weekOffset) || ''; }
+function saveGoal(v) { localStorage.setItem(GOAL_KEY + '_' + weekOffset, v); }
 
 // ── SERVICE WORKER ──
 async function registerServiceWorker() {
@@ -397,7 +397,7 @@ function calcColWidth() {
 }
 
 function render() {
-  const dates    = getWeekDates(0); // 今日起点で7日分（weekOffset廃止）
+  const dates    = getWeekDates(weekOffset);
   const todayStr = getTodayStr();
   const colW     = calcColWidth();
 
@@ -413,12 +413,18 @@ function render() {
   if (goalWrap) {
     goalWrap.innerHTML = '';
     const nav = document.createElement('div'); nav.className = 'goal-nav';
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'goal-nav-btn'; prevBtn.textContent = '＜'; prevBtn.title = '前の週';
+    prevBtn.addEventListener('click', () => { weekOffset--; render(); });
     const goalInput = document.createElement('input');
     goalInput.type = 'text'; goalInput.id = 'goal-input';
     goalInput.placeholder = '📌 長期的な目標を入力…';
     goalInput.value = loadGoal();
     goalInput.addEventListener('input', () => saveGoal(goalInput.value));
-    nav.appendChild(goalInput);
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'goal-nav-btn'; nextBtn.textContent = '＞'; nextBtn.title = '次の週';
+    nextBtn.addEventListener('click', () => { weekOffset++; render(); });
+    nav.appendChild(prevBtn); nav.appendChild(goalInput); nav.appendChild(nextBtn);
     goalWrap.appendChild(nav);
   }
 
@@ -978,7 +984,7 @@ function getDateFromColBody(col) {
   const cols = Array.from(wrap.children);
   const idx  = cols.indexOf(col);
   if (idx < 0) return null;
-  const dates = getWeekDates(0);
+  const dates = getWeekDates(weekOffset);
   return dates[idx] ? toDateStr(dates[idx]) : null;
 }
 
