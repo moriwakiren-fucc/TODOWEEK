@@ -322,7 +322,7 @@ async function refreshNotifModal() {
     toggleBtn.className      = 'btn-notif disabled';
     toggleBtn.dataset.state  = 'denied';
   } else if (thisSub) {
-    statusText.textContent   = 'オン';
+    statusText.textContent   = '通知はオンです';
     toggleBtn.textContent    = 'オフにする';
     toggleBtn.className      = 'btn-notif off';
     toggleBtn.dataset.state  = 'on';
