@@ -378,19 +378,20 @@ document.getElementById('notif-overlay').addEventListener('click', function(e) {
 
 // ── RENDER ──
 // ── 列幅計算 ──
-// 画面幅に応じて7列を表示、幅が足りない場合は4列以上を保証
+// 基本：画面幅÷7でピッタリ収める
+// 例外：1列80px未満になる場合はスクロール有効化（80px固定）
+//        画面に収まる整数列数は4以上を保証
 function calcColWidth() {
   const W       = window.innerWidth;
-  const COL_MIN = 80;  // 最小列幅px
-  const COL_DEF = 120; // 理想列幅px
+  const COL_MIN = 80;
   const TOTAL   = 7;
 
-  // 7列全部が画面に収まる最小幅
-  if (W >= COL_MIN * TOTAL) {
-    // 7列表示：画面幅÷7を列幅にする（最大120px）
-    return Math.min(COL_DEF, Math.floor(W / TOTAL));
+  const natural = W / TOTAL; // 7列ぴったりの幅
+  if (natural >= COL_MIN) {
+    // 7列が画面にピッタリ収まる → 割り切れる幅に
+    return Math.floor(W / TOTAL);
   }
-  // 4列以上が収まる最大整数列数を求める
+  // 4列以上が収まる最大整数列数
   const visibleCols = Math.max(4, Math.floor(W / COL_MIN));
   return Math.floor(W / visibleCols);
 }
@@ -403,7 +404,7 @@ function render() {
   // CSS変数として列幅を設定
   document.documentElement.style.setProperty('--col-w', colW + 'px');
 
-  // scroll-innerの幅を7列分に設定
+  // scroll-innerの幅を7列分にピッタリ設定（隙間をなくす）
   const scrollInner = document.getElementById('scroll-inner');
   if (scrollInner) scrollInner.style.width = (colW * 7) + 'px';
 
@@ -461,12 +462,11 @@ function render() {
   renderOverdue();
 }
 
-// リサイズ時に列幅を再計算
+// リサイズ時に完全再描画
+let resizeTimer = null;
 window.addEventListener('resize', () => {
-  const colW = calcColWidth();
-  document.documentElement.style.setProperty('--col-w', colW + 'px');
-  const scrollInner = document.getElementById('scroll-inner');
-  if (scrollInner) scrollInner.style.width = (colW * 7) + 'px';
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(render, 100);
 });
 
 function makeTaskEl(task, isOverdue = false) {
