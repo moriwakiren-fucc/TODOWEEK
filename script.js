@@ -322,7 +322,7 @@ async function refreshNotifModal() {
     toggleBtn.className      = 'btn-notif disabled';
     toggleBtn.dataset.state  = 'denied';
   } else if (thisSub) {
-    statusText.textContent   = 'オン（毎日20:00に通知）';
+    statusText.textContent   = 'オン';
     toggleBtn.textContent    = 'オフにする';
     toggleBtn.className      = 'btn-notif off';
     toggleBtn.dataset.state  = 'on';
@@ -456,7 +456,15 @@ function render() {
       const ds  = toDateStr(d); const dow = d.getDay(); const hol = isHoliday(ds);
       const col = document.createElement('div'); col.className = 'col-body';
       if (ds === todayStr) col.classList.add('today-col');
-      tasks.filter(t => t.date === ds).forEach(t => col.appendChild(makeTaskEl(t)));
+      tasks
+        .filter(t => t.date === ds)
+        .sort((a, b) => {
+          // notifTimeがnone/未設定は最後尾
+          const ta = (!a.notifTime || a.notifTime === 'none') ? '99:99' : a.notifTime;
+          const tb = (!b.notifTime || b.notifTime === 'none') ? '99:99' : b.notifTime;
+          return ta < tb ? -1 : ta > tb ? 1 : 0;
+        })
+        .forEach(t => col.appendChild(makeTaskEl(t)));
       const btn = document.createElement('button');
       btn.className = 'new-btn'; btn.textContent = '＋';
       btn.addEventListener('click', () => openModal(null, ds));
@@ -634,7 +642,12 @@ function renderOverdue() {
     sec.classList.add('collapsed');
     document.getElementById('overdue-toggle').textContent = '▲ 開く';
   }
-  od.sort((a,b)=>a.date<b.date?-1:1);
+  od.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    const ta = (!a.notifTime || a.notifTime === 'none') ? '99:99' : a.notifTime;
+    const tb = (!b.notifTime || b.notifTime === 'none') ? '99:99' : b.notifTime;
+    return ta < tb ? -1 : ta > tb ? 1 : 0;
+  });
   const list = document.getElementById('overdue-list'); list.innerHTML = '';
   od.forEach(t => list.appendChild(makeTaskEl(t, true)));
 }
