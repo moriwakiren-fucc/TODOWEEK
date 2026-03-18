@@ -170,8 +170,8 @@ function schedulePush() {
 }
 
 // ── GOAL ──
-function loadGoal() { return localStorage.getItem(GOAL_KEY + '_' + weekOffset) || ''; }
-function saveGoal(v) { localStorage.setItem(GOAL_KEY + '_' + weekOffset, v); }
+function loadGoal() { return localStorage.getItem(GOAL_KEY) || ''; }
+function saveGoal(v) { localStorage.setItem(GOAL_KEY, v); }
 
 // ── SERVICE WORKER ──
 async function registerServiceWorker() {
@@ -377,58 +377,97 @@ document.getElementById('notif-overlay').addEventListener('click', function(e) {
 });
 
 // ── RENDER ──
+// ── 列幅計算 ──
+// 画面幅に応じて7列を表示、幅が足りない場合は4列以上を保証
+function calcColWidth() {
+  const W       = window.innerWidth;
+  const COL_MIN = 80;  // 最小列幅px
+  const COL_DEF = 120; // 理想列幅px
+  const TOTAL   = 7;
+
+  // 7列全部が画面に収まる最小幅
+  if (W >= COL_MIN * TOTAL) {
+    // 7列表示：画面幅÷7を列幅にする（最大120px）
+    return Math.min(COL_DEF, Math.floor(W / TOTAL));
+  }
+  // 4列以上が収まる最大整数列数を求める
+  const visibleCols = Math.max(4, Math.floor(W / COL_MIN));
+  return Math.floor(W / visibleCols);
+}
+
 function render() {
-  const dates    = getWeekDates(weekOffset);
+  const dates    = getWeekDates(0); // 今日起点で7日分（weekOffset廃止）
   const todayStr = getTodayStr();
+  const colW     = calcColWidth();
 
-  document.getElementById('cols').innerHTML = dates.map(()=>'<col>').join('');
+  // CSS変数として列幅を設定
+  document.documentElement.style.setProperty('--col-w', colW + 'px');
 
-  // Goal row
-  const goalRow = document.getElementById('goal-row');
-  goalRow.innerHTML = '';
-  const goalTd = document.createElement('td'); goalTd.colSpan = 7;
-  const nav = document.createElement('div'); nav.className = 'goal-nav';
-  const prevBtn = document.createElement('button');
-  prevBtn.className='goal-nav-btn'; prevBtn.textContent='＜'; prevBtn.title='前の週';
-  prevBtn.addEventListener('click', ()=>{ weekOffset--; render(); });
-  const goalInput = document.createElement('input');
-  goalInput.type='text'; goalInput.id='goal-input';
-  goalInput.placeholder='📌 長期的な目標を入力…'; goalInput.value=loadGoal();
-  goalInput.addEventListener('input', ()=>saveGoal(goalInput.value));
-  const nextBtn = document.createElement('button');
-  nextBtn.className='goal-nav-btn'; nextBtn.textContent='＞'; nextBtn.title='次の週';
-  nextBtn.addEventListener('click', ()=>{ weekOffset++; render(); });
-  nav.appendChild(prevBtn); nav.appendChild(goalInput); nav.appendChild(nextBtn);
-  goalTd.appendChild(nav); goalRow.appendChild(goalTd);
+  // scroll-innerの幅を7列分に設定
+  const scrollInner = document.getElementById('scroll-inner');
+  if (scrollInner) scrollInner.style.width = (colW * 7) + 'px';
 
-  // Date headers
-  document.getElementById('date-row').innerHTML = dates.map(d => {
-    const ds  = toDateStr(d); const dow = d.getDay(); const hol = isHoliday(ds);
-    const isToday = ds === todayStr;
-    let cls = '';
-    if (isToday) cls = 'today-col';
-    else if (hol) cls = 'hol-col';
-    else if (dow === 0) cls = 'sun-col';
-    else if (dow === 6) cls = 'sat-col';
-    const dowLabel = hol ? DAY[dow] + '祝' : DAY[dow];
-    return `<th class="${cls}"><span class="day-num">${d.getDate()}</span>${d.getMonth()+1}/${d.getDate()}(${dowLabel})</th>`;
-  }).join('');
+  // ── Goal row ──
+  const goalWrap = document.getElementById('goal-row-wrap');
+  if (goalWrap) {
+    goalWrap.innerHTML = '';
+    const nav = document.createElement('div'); nav.className = 'goal-nav';
+    const goalInput = document.createElement('input');
+    goalInput.type = 'text'; goalInput.id = 'goal-input';
+    goalInput.placeholder = '📌 長期的な目標を入力…';
+    goalInput.value = loadGoal();
+    goalInput.addEventListener('input', () => saveGoal(goalInput.value));
+    nav.appendChild(goalInput);
+    goalWrap.appendChild(nav);
+  }
 
-  // Columns
-  const wrap = document.getElementById('columns-wrap'); wrap.innerHTML = '';
-  dates.forEach(d => {
-    const ds  = toDateStr(d); const dow = d.getDay(); const hol = isHoliday(ds);
-    const col = document.createElement('div'); col.className = 'col-body';
-    if (ds === todayStr) col.classList.add('today-col');
-    tasks.filter(t => t.date === ds).forEach(t => col.appendChild(makeTaskEl(t)));
-    const btn = document.createElement('button');
-    btn.className='new-btn'; btn.textContent='＋';
-    btn.addEventListener('click', ()=>openModal(null, ds));
-    col.appendChild(btn); wrap.appendChild(col);
-  });
+  // ── Date headers ──
+  const dateRowWrap = document.getElementById('date-row-wrap');
+  if (dateRowWrap) {
+    dateRowWrap.innerHTML = '';
+    dates.forEach(d => {
+      const ds       = toDateStr(d); const dow = d.getDay(); const hol = isHoliday(ds);
+      const isToday  = ds === todayStr;
+      let cls = '';
+      if (isToday)    cls = 'today-col';
+      else if (hol)   cls = 'hol-col';
+      else if (dow === 0) cls = 'sun-col';
+      else if (dow === 6) cls = 'sat-col';
+      const dowLabel = hol ? DAY[dow] + '祝' : DAY[dow];
+      const th = document.createElement('div');
+      th.className = 'date-col-header ' + cls;
+      th.innerHTML = `<span class="day-num">${d.getDate()}</span>${d.getMonth()+1}/${d.getDate()}(${dowLabel})`;
+      dateRowWrap.appendChild(th);
+    });
+  }
+
+  // ── Columns ──
+  const wrap = document.getElementById('columns-wrap');
+  if (wrap) {
+    wrap.innerHTML = '';
+    dates.forEach(d => {
+      const ds  = toDateStr(d); const dow = d.getDay(); const hol = isHoliday(ds);
+      const col = document.createElement('div'); col.className = 'col-body';
+      if (ds === todayStr) col.classList.add('today-col');
+      tasks.filter(t => t.date === ds).forEach(t => col.appendChild(makeTaskEl(t)));
+      const btn = document.createElement('button');
+      btn.className = 'new-btn'; btn.textContent = '＋';
+      btn.addEventListener('click', () => openModal(null, ds));
+      col.appendChild(btn);
+      wrap.appendChild(col);
+    });
+  }
 
   renderOverdue();
 }
+
+// リサイズ時に列幅を再計算
+window.addEventListener('resize', () => {
+  const colW = calcColWidth();
+  document.documentElement.style.setProperty('--col-w', colW + 'px');
+  const scrollInner = document.getElementById('scroll-inner');
+  if (scrollInner) scrollInner.style.width = (colW * 7) + 'px';
+});
 
 function makeTaskEl(task, isOverdue = false) {
   const div = document.createElement('div');
@@ -444,31 +483,43 @@ function makeTaskEl(task, isOverdue = false) {
   });
 
   const lbl = document.createElement('div'); lbl.className = 'task-label';
-  const titleEl = document.createElement('div');
   const f = task.format || {};
   let td = ''; if (f.underline) td = 'underline'; else if (f['double-underline']) td = 'underline double';
+
+  // 日付ラベル（overdue時のみ）
+  if (isOverdue) {
+    const dl = document.createElement('div'); dl.className='overdue-date-label';
+    dl.textContent = task.date; lbl.appendChild(dl);
+  }
+
+  // タイトル行
+  const titleEl = document.createElement('div'); titleEl.className = 'task-title-line';
   titleEl.textContent          = task.title;
   titleEl.style.color          = (f.fg) ? f.fg : c.fg;
-  titleEl.style.fontWeight     = f.bold ? '700' : '';
+  titleEl.style.fontWeight     = f.bold ? '700' : '600';
   titleEl.style.textDecoration = td;
   lbl.appendChild(titleEl);
 
-  if (isOverdue) {
-    const dl = document.createElement('div'); dl.className='overdue-date-label';
-    dl.textContent = task.date; lbl.prepend(dl);
-  }
-  if (task.subject && task.subject !== 'なし') {
-    const tag = document.createElement('span'); tag.className = 'subject-tag';
-    tag.textContent = task.subject;
-    tag.style.background = 'transparent';
-    tag.style.color = c.fg; tag.style.border = `1.5px solid ${c.fg}`;
-    lbl.appendChild(tag);
-  }
-  if (task.remind && task.remind !== '0') {
-    const ri = document.createElement('div'); ri.className='remind-info';
-    const timeLabel = (!task.notifTime || task.notifTime === 'none') ? '' : ` ${task.notifTime}`;
-    const remindLabel = task.remind === 'today' ? '当日' : `${task.remind}日前`;
-    ri.textContent = `⏰ ${remindLabel}${timeLabel}`; lbl.appendChild(ri);
+  // サブ情報行（教科＋リマインド）
+  const hasSubject = task.subject && task.subject !== 'なし';
+  const hasRemind  = task.remind && task.remind !== '0';
+  if (hasSubject || hasRemind) {
+    const sub = document.createElement('div'); sub.className = 'task-sub-line';
+    if (hasSubject) {
+      const tag = document.createElement('span'); tag.className = 'subject-tag';
+      tag.textContent = task.subject;
+      tag.style.background = 'transparent';
+      tag.style.color = c.fg; tag.style.border = `1.5px solid ${c.fg}`;
+      sub.appendChild(tag);
+    }
+    if (hasRemind) {
+      const ri = document.createElement('div'); ri.className='remind-info';
+      const timeLabel   = (!task.notifTime || task.notifTime === 'none') ? '' : ` ${task.notifTime}`;
+      const remindLabel = task.remind === 'today' ? '当日' : `${task.remind}日前`;
+      ri.textContent = `⏰ ${remindLabel}${timeLabel}`;
+      sub.appendChild(ri);
+    }
+    lbl.appendChild(sub);
   }
   div.appendChild(cb); div.appendChild(lbl);
   div.addEventListener('click', ()=>openModal(task.id));
@@ -609,9 +660,39 @@ function updateFmtUI() {
     const btn = document.getElementById('fmt-' + k);
     if (btn) btn.classList.toggle('active', !!fmt[k]);
   });
-  buildColorPicker('color-fg-row', FG_PALETTE, fmt.fg, color => { fmt.fg = color; updateFmtUI(); });
-  buildColorPicker('color-bg-row', BG_PALETTE, fmt.bg, color => { fmt.bg = color; updateFmtUI(); });
+  buildColorPicker('color-fg-row', FG_PALETTE, fmt.fg, color => { fmt.fg = color; syncCustomColor('fg'); updateFmtUI(); });
+  buildColorPicker('color-bg-row', BG_PALETTE, fmt.bg, color => { fmt.bg = color; syncCustomColor('bg'); updateFmtUI(); });
+
+  // カスタムカラー入力欄の値を同期
+  syncCustomColor('fg');
+  syncCustomColor('bg');
+
+  // カスタムカラー入力のイベント（重複登録防止のため一度だけ）
+  const fgIn = document.getElementById('color-fg-custom');
+  const bgIn = document.getElementById('color-bg-custom');
+  if (fgIn && !fgIn._bound) {
+    fgIn._bound = true;
+    fgIn.addEventListener('input', () => { fmt.fg = fgIn.value; buildColorPicker('color-fg-row', FG_PALETTE, null, color => { fmt.fg = color; syncCustomColor('fg'); updateFmtUI(); }); updatePreview(); });
+  }
+  if (bgIn && !bgIn._bound) {
+    bgIn._bound = true;
+    bgIn.addEventListener('input', () => { fmt.bg = bgIn.value; buildColorPicker('color-bg-row', BG_PALETTE, null, color => { fmt.bg = color; syncCustomColor('bg'); updateFmtUI(); }); updatePreview(); });
+  }
+
   updatePreview();
+}
+
+function syncCustomColor(type) {
+  const val = type === 'fg' ? fmt.fg : fmt.bg;
+  const el  = document.getElementById(`color-${type}-custom`);
+  if (!el) return;
+  // パレット外のカラーならカスタム入力に反映
+  const palette = type === 'fg' ? FG_PALETTE : BG_PALETTE;
+  if (val && !palette.includes(val)) {
+    el.value = val;
+  } else if (val) {
+    el.value = val;
+  }
 }
 
 function initFmtFromSubject(subject) {
@@ -655,6 +736,11 @@ function openModal(id, dateStr) {
   document.getElementById('f-date-group').style.display = isEdit ? 'block' : 'none';
   document.getElementById('custom-subject-group').style.display = 'none';
   fmt = { bold:false, underline:false, 'double-underline':false, fg:null, bg:null };
+  // カスタムカラー入力のイベント再バインドを許可
+  const fgIn = document.getElementById('color-fg-custom');
+  const bgIn = document.getElementById('color-bg-custom');
+  if (fgIn) fgIn._bound = false;
+  if (bgIn) bgIn._bound = false;
 
   if (isEdit) {
     const t = tasks.find(t => t.id === id);
@@ -883,12 +969,11 @@ function getColBodyAt(x, y) {
 }
 
 function getDateFromColBody(col) {
-  // columns-wrap内の何番目かで日付を特定
   const wrap = document.getElementById('columns-wrap');
   const cols = Array.from(wrap.children);
   const idx  = cols.indexOf(col);
   if (idx < 0) return null;
-  const dates = getWeekDates(weekOffset);
+  const dates = getWeekDates(0);
   return dates[idx] ? toDateStr(dates[idx]) : null;
 }
 
