@@ -68,40 +68,19 @@ header {
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
 /* 🔔ボタン */
-.notif-header-btn {
-  background: none; border: none; font-size: 22px; cursor: pointer;
-  padding: 4px 6px; border-radius: 8px; transition: background 0.15s;
-  flex-shrink: 0; line-height: 1;
-}
-.notif-header-btn:hover { background: var(--surface2); }
-.notif-header-btn.active { position: relative; }
-.notif-header-btn.active::after {
-  content: ''; position: absolute; top: 2px; right: 2px;
-  width: 8px; height: 8px; border-radius: 50%; background: #3db86a;
-  border: 1.5px solid #fff;
-}
 
 /* ── TABLE OUTER ── */
-#table-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
-#main-table {
-  width: 100%; min-width: 420px; border-collapse: collapse; table-layout: fixed;
-  flex-shrink: 0; position: relative; z-index: 10;
+#table-outer {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0;
 }
 
-/* ── GOAL ROW ── */
-#goal-row td {
+/* ── GOAL ROW（スクロール外・全幅固定） ── */
+#goal-row-wrap {
+  flex-shrink: 0;
   background: #fffbe8; border: 1px solid #e8dfa0;
   border-bottom: 2px solid #d4c060; padding: 6px 8px;
 }
 .goal-nav { display: flex; align-items: center; gap: 6px; }
-.goal-nav-btn {
-  background: #f5e88a; border: 1px solid #c8b830; border-radius: 7px; color: #7a6600;
-  font-size: 18px; width: 34px; height: 34px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; transition: background 0.15s; font-weight: 700; line-height: 1;
-}
-.goal-nav-btn:hover  { background: #e8d660; }
-.goal-nav-btn:active { background: #c8b830; }
 #goal-input {
   flex: 1; background: transparent; border: none; outline: none;
   font-size: 16px; font-family: 'Noto Sans JP', sans-serif;
@@ -109,41 +88,69 @@ header {
 }
 #goal-input::placeholder { color: #b8a840; }
 
-/* ── DATE HEADER ── */
-thead tr#date-row th {
-  background: var(--surface); border: 1px solid var(--border);
+/* ── スクロールエリア ── */
+#scroll-wrap {
+  flex: 1; overflow-x: auto; overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  min-height: 0;
+  /* スクロールバー非表示（見た目） */
+  scrollbar-width: none;
+}
+#scroll-wrap::-webkit-scrollbar { display: none; }
+
+#scroll-inner {
+  display: flex; flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  /* 幅はJSで動的に設定 */
+}
+
+/* date-row-wrapがscroll-innerの幅に合わせて伸びる */
+#date-row-wrap {
+  display: flex; flex-shrink: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.date-col-header {
+  flex: 0 0 var(--col-w);
+  border: 1px solid var(--border);
+  border-left: none; border-bottom: none;
   padding: 8px 4px 7px; text-align: center;
   font-size: 13px; font-family: 'DM Serif Display', serif;
   font-weight: 400; color: var(--text2); white-space: nowrap;
-  box-shadow: 0 1px 0 var(--border);
+  background: var(--surface);
 }
-thead tr#date-row th .day-num {
-  font-size: 20px; display: block; color: var(--text); line-height: 1.2;
+.date-col-header:first-child { border-left: 1px solid var(--border); }
+.date-col-header .day-num {
+  font-size: 18px; display: block; color: var(--text); line-height: 1.2;
 }
-thead tr#date-row th.today-col { color: #e07020; border-bottom: 2.5px solid #f0a060; background: #fff3e8; }
-thead tr#date-row th.today-col .day-num { color: #e07020; }
-thead tr#date-row th.sun-col  { color: #cc2222; }
-thead tr#date-row th.sun-col  .day-num { color: #cc2222; }
-thead tr#date-row th.sat-col  { color: #1a44cc; }
-thead tr#date-row th.sat-col  .day-num { color: #1a44cc; }
-thead tr#date-row th.hol-col  { color: #cc2222; }
-thead tr#date-row th.hol-col  .day-num { color: #cc2222; }
+.date-col-header.today-col { color: #e07020; border-bottom: 2.5px solid #f0a060; background: #fff3e8; }
+.date-col-header.today-col .day-num { color: #e07020; }
+.date-col-header.sun-col  { color: #cc2222; }
+.date-col-header.sun-col  .day-num { color: #cc2222; }
+.date-col-header.sat-col  { color: #1a44cc; }
+.date-col-header.sat-col  .day-num { color: #1a44cc; }
+.date-col-header.hol-col  { color: #cc2222; }
+.date-col-header.hol-col  .day-num { color: #cc2222; }
 
 /* ── COLUMNS WRAP ── */
-#columns-wrap { display: flex; flex: 1; overflow: hidden; min-height: 0; min-width: 420px; }
+#columns-wrap {
+  display: flex; flex: 1; min-height: 0;
+}
 .col-body {
-  flex: 1; overflow-y: auto; overflow-x: hidden;
+  flex: 0 0 var(--col-w);
+  overflow-y: auto; overflow-x: hidden;
   border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
   padding: 6px 5px 8px; background: var(--surface);
-  -webkit-overflow-scrolling: touch; min-width: 0;
+  -webkit-overflow-scrolling: touch;
 }
 .col-body:first-child { border-left: 1px solid var(--border); }
 .col-body.today-col   { background: var(--today-bg); border-color: #f0c090; }
 
 /* ── TASK ITEM ── */
 .task-item {
-  display: flex; align-items: flex-start; gap: 7px; margin-bottom: 6px;
-  padding: 8px 7px; border-radius: 10px;
+  display: flex; align-items: flex-start; gap: 6px; margin-bottom: 6px;
+  padding: 7px 6px; border-radius: 10px;
   background: var(--surface2); border: 1px solid var(--border);
   cursor: pointer; transition: opacity 0.15s, box-shadow 0.15s;
   animation: slideIn 0.18s ease; min-width: 0;
@@ -154,31 +161,38 @@ thead tr#date-row th.hol-col  .day-num { color: #cc2222; }
 .task-item.done   { opacity: 0.55; }
 
 .task-cb {
-  width: 24px; height: 24px; min-width: 24px; border-radius: 7px;
+  width: 22px; height: 22px; min-width: 22px; border-radius: 6px;
   border: 2px solid var(--border2); background: rgba(255,255,255,0.7); flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   margin-top: 1px; transition: background 0.15s, border-color 0.15s; cursor: pointer;
 }
 .task-item.done .task-cb { background: #3db86a; border-color: #3db86a; }
 .task-cb::after {
-  content: ''; width: 6px; height: 10px;
+  content: ''; width: 5px; height: 9px;
   border-right: 2.5px solid #fff; border-bottom: 2.5px solid #fff;
   transform: rotate(45deg) translate(-1px,-1px); opacity: 0; transition: opacity 0.15s;
 }
 .task-item.done .task-cb::after { opacity: 1; }
 
+/* タスクラベル：タイトル横並び、サブ情報を下に */
 .task-label {
-  font-size: 14px; line-height: 1.45; word-break: break-all;
-  overflow-wrap: anywhere; min-width: 0; flex: 1; color: var(--text);
+  min-width: 0; flex: 1; color: var(--text);
 }
-.task-item.done .task-label { text-decoration: line-through; color: var(--text2); }
-
+.task-title-line {
+  font-size: 13px; font-weight: 600; line-height: 1.4;
+  word-break: break-all; overflow-wrap: anywhere;
+  white-space: normal;
+}
+.task-item.done .task-title-line { text-decoration: line-through; color: var(--text2); }
+.task-sub-line {
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 2px;
+}
 .subject-tag {
-  font-size: 11px; border-radius: 5px; padding: 2px 7px; font-weight: 700;
-  display: inline-block; margin-top: 3px;
+  font-size: 10px; border-radius: 4px; padding: 1px 5px; font-weight: 700;
+  display: inline-block; line-height: 1.4;
 }
 .remind-info {
-  font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 3px; margin-top: 3px;
+  font-size: 10px; color: var(--text2); display: flex; align-items: center; gap: 2px;
 }
 
 /* ── NEW BUTTON ── */
@@ -469,6 +483,32 @@ thead tr#date-row th.hol-col  .day-num { color: #cc2222; }
 }
 .btn-device-delete:hover  { background: #ffe0e8; }
 .btn-device-delete.current { background: var(--surface2); color: var(--text2); border-color: var(--border); }
+
+/* カスタムカラー入力 */
+.color-custom-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.color-custom-input {
+  width: 44px; height: 36px; border-radius: 8px;
+  border: 2px solid var(--border2); cursor: pointer;
+  padding: 2px; background: var(--surface);
+  -webkit-appearance: none; appearance: none;
+}
+.color-custom-input::-webkit-color-swatch-wrapper { padding: 0; }
+.color-custom-input::-webkit-color-swatch { border-radius: 5px; border: none; }
+
+/* 🔔ボタン通知オン時のハイライト */
+.notif-header-btn {
+  background: none; border: none; font-size: 22px; cursor: pointer;
+  padding: 4px 6px; border-radius: 8px; transition: background 0.15s, box-shadow 0.15s;
+  flex-shrink: 0; line-height: 1;
+}
+.notif-header-btn:hover { background: var(--surface2); }
+.notif-header-btn.active {
+  background: #e8fff0;
+  box-shadow: 0 0 0 2px #3db86a;
+  border-radius: 8px;
+}
 
 /* ── ドラッグ＆ドロップ ── */
 .col-body.drag-over {
