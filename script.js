@@ -910,12 +910,17 @@ window.addEventListener('offline', () => {
   setSyncUI('err', 'オフライン');
 });
 
-// ── ピンチズームをブロック ──
+// ── ピンチズームをブロック（タッチ・トラックパッド両方） ──
 document.addEventListener('touchstart', e => {
   if (e.touches.length > 1) e.preventDefault();
 }, { passive: false });
 document.addEventListener('touchmove', e => {
   if (e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+
+// トラックパッドのピンチ（ctrlキー付きwheelイベント）をブロック
+document.addEventListener('wheel', e => {
+  if (e.ctrlKey) e.preventDefault();
 }, { passive: false });
 
 // ── ドラッグ＆ドロップで日付変更 ──
