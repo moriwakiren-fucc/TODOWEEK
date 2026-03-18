@@ -1,6 +1,6 @@
 // sw.js - TodoWeek Service Worker
 
-const CACHE_NAME = 'todoweek-v3';
+const CACHE_NAME = 'todoweek-v4';
 const CACHE_URLS = [
   './',
   './index.html',
