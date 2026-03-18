@@ -470,6 +470,21 @@ thead tr#date-row th.hol-col  .day-num { color: #cc2222; }
 .btn-device-delete:hover  { background: #ffe0e8; }
 .btn-device-delete.current { background: var(--surface2); color: var(--text2); border-color: var(--border); }
 
+/* ── ドラッグ＆ドロップ ── */
+.col-body.drag-over {
+  background: var(--accent-light) !important;
+  border-color: var(--accent) !important;
+  outline: 2px dashed var(--accent);
+}
+.task-item.dragging {
+  opacity: 0.35;
+}
+body.dragging-active {
+  cursor: grabbing !important;
+  user-select: none;
+}
+.task-item { cursor: grab; }
+
 /* ── TOAST ── */
 #toast {
   position: fixed; bottom: calc(28px + env(safe-area-inset-bottom));
