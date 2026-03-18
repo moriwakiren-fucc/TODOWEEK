@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="TodoWeek">
+  <meta name="apple-mobile-web-app-title" content="TodoRemind">
   <meta name="theme-color" content="#ffffff">
-  <title>TodoWeek</title>
+  <title>TodoRemind</title>
   <link rel="icon" href="favicon.ico">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="manifest" href="manifest.json">
@@ -22,7 +22,7 @@
 
   <!-- ── HEADER ── -->
   <header>
-    <div class="logo" id="logo-btn">Todo<span>Week</span></div>
+    <div class="logo" id="logo-btn">Todo<span>Remind</span></div>
     <div id="sync-status" title="タップして設定">
       <div id="sync-dot"></div>
       <span id="sync-label">未設定</span>
@@ -32,14 +32,15 @@
 
   <!-- ── MAIN TABLE ── -->
   <div id="table-outer">
-    <table id="main-table">
-      <colgroup id="cols"></colgroup>
-      <thead>
-        <tr id="goal-row"></tr>
-        <tr id="date-row"></tr>
-      </thead>
-    </table>
-    <div id="columns-wrap"></div>
+    <!-- 長期目標行（スクロール外・固定） -->
+    <div id="goal-row-wrap"></div>
+    <!-- スクロール可能エリア（日付ヘッダー＋タスク列） -->
+    <div id="scroll-wrap">
+      <div id="scroll-inner">
+        <div id="date-row-wrap"></div>
+        <div id="columns-wrap"></div>
+      </div>
+    </div>
   </div>
 
   <!-- ── OVERDUE SECTION ── -->
@@ -137,8 +138,16 @@
         </div>
         <div class="format-label-small">文字色</div>
         <div class="color-picker-row" id="color-fg-row"></div>
+        <div class="color-custom-row">
+          <label class="format-label-small" for="color-fg-custom">カスタム文字色</label>
+          <input type="color" id="color-fg-custom" class="color-custom-input" value="#1a1e2e">
+        </div>
         <div class="format-label-small">背景色</div>
         <div class="color-picker-row" id="color-bg-row"></div>
+        <div class="color-custom-row">
+          <label class="format-label-small" for="color-bg-custom">カスタム背景色</label>
+          <input type="color" id="color-bg-custom" class="color-custom-input" value="#ffffff">
+        </div>
       </div>
     </div>
 
