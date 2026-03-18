@@ -98,36 +98,75 @@ function genId() { return Math.random().toString(36).slice(2,9) + Date.now().toS
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ── SYNC ──
+const PENDING_KEY = 'todoweek_pending_sync'; // オフライン中の未同期フラグ
+
 function setSyncUI(state, label) {
   document.getElementById('sync-dot').className = state;
   document.getElementById('sync-label').textContent = label;
 }
+
 async function pushToCloud() {
   if (!config.userId) return;
-  setSyncUI('syncing','同期中…');
+  if (!navigator.onLine) {
+    // オフライン：未同期フラグを立てておく
+    localStorage.setItem(PENDING_KEY, '1');
+    setSyncUI('err', 'オフライン');
+    return;
+  }
+  setSyncUI('syncing', '同期中…');
   try {
     const r = await fetch(`${WORKER_URL}/tasks/${config.userId}`, {
-      method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(tasks)
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tasks),
     });
     if (!r.ok) throw new Error(r.status);
-    setSyncUI('ok','同期済み ✓');
-  } catch(e) { setSyncUI('err','エラー'); }
+    localStorage.removeItem(PENDING_KEY);
+    setSyncUI('ok', '同期済み ✓');
+  } catch(e) {
+    localStorage.setItem(PENDING_KEY, '1');
+    setSyncUI('err', 'エラー');
+  }
 }
+
 async function pullFromCloud() {
-  if (!config.userId) { setSyncUI('','未設定'); return; }
-  setSyncUI('syncing','読込中…');
+  if (!config.userId) { setSyncUI('', '未設定'); return; }
+  if (!navigator.onLine) {
+    // オフライン：localStorageのデータをそのまま使う
+    setSyncUI('err', 'オフライン');
+    render();
+    return;
+  }
+  setSyncUI('syncing', '読込中…');
   try {
     const r = await fetch(`${WORKER_URL}/tasks/${config.userId}`);
     if (!r.ok) throw new Error(r.status);
     const data = await r.json();
-    if (Array.isArray(data)) { tasks = data; localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); }
-    setSyncUI('ok','同期済み ✓');
+    if (Array.isArray(data)) {
+      // オフライン中に編集があった場合はローカルを優先してサーバーに上書き
+      if (localStorage.getItem(PENDING_KEY)) {
+        await pushToCloud();
+      } else {
+        tasks = data;
+        localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+      }
+    }
+    setSyncUI('ok', '同期済み ✓');
     render();
-  } catch(e) { setSyncUI('err','エラー'); }
+  } catch(e) {
+    setSyncUI('err', 'エラー');
+    render(); // エラーでもローカルデータで表示
+  }
 }
+
 function schedulePush() {
   localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-  clearTimeout(syncTimer); syncTimer = setTimeout(pushToCloud, 1500);
+  if (!navigator.onLine) {
+    localStorage.setItem(PENDING_KEY, '1');
+    setSyncUI('err', 'オフライン（復帰時に同期）');
+    return;
+  }
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(pushToCloud, 1500);
 }
 
 // ── GOAL ──
@@ -428,10 +467,58 @@ function makeTaskEl(task, isOverdue = false) {
   if (task.remind && task.remind !== '0') {
     const ri = document.createElement('div'); ri.className='remind-info';
     const timeLabel = (!task.notifTime || task.notifTime === 'none') ? '' : ` ${task.notifTime}`;
-    ri.textContent = `⏰ ${task.remind}日前${timeLabel}`; lbl.appendChild(ri);
+    const remindLabel = task.remind === 'today' ? '当日' : `${task.remind}日前`;
+    ri.textContent = `⏰ ${remindLabel}${timeLabel}`; lbl.appendChild(ri);
   }
   div.appendChild(cb); div.appendChild(lbl);
   div.addEventListener('click', ()=>openModal(task.id));
+
+  // ── ドラッグ開始（マウス） ──
+  let dragStarted = false;
+  let mouseDownX = 0, mouseDownY = 0;
+  div.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    mouseDownX = e.clientX; mouseDownY = e.clientY;
+    dragStarted = false;
+    const onMove = mv => {
+      const dx = Math.abs(mv.clientX - mouseDownX);
+      const dy = Math.abs(mv.clientY - mouseDownY);
+      if (!dragStarted && (dx > 6 || dy > 6)) {
+        dragStarted = true;
+        initDrag(div, task, mouseDownX, mouseDownY);
+        moveDragClone(mv.clientX, mv.clientY);
+      }
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',  onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+  });
+  div.addEventListener('click', e => {
+    if (dragStarted) { e.stopImmediatePropagation(); dragStarted = false; }
+  }, true);
+
+  // ── ドラッグ開始（タッチ） ──
+  let touchTimer = null;
+  div.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    touchTimer = setTimeout(() => {
+      // 長押し（400ms）でドラッグ開始
+      initDrag(div, task, t.clientX, t.clientY);
+      // バイブレーション（対応端末のみ）
+      if (navigator.vibrate) navigator.vibrate(40);
+    }, 400);
+  }, { passive: true });
+  div.addEventListener('touchmove', () => {
+    if (touchTimer) { clearTimeout(touchTimer); touchTimer = null; }
+  }, { passive: true });
+  div.addEventListener('touchend', () => {
+    if (touchTimer) { clearTimeout(touchTimer); touchTimer = null; }
+  });
+
   return div;
 }
 
@@ -477,7 +564,6 @@ function updateNotifTimeVisibility() {
   document.getElementById('f-notif-time-group').style.display =
     (remindVal === '0') ? 'none' : 'block';
 }
-
 function renderOverdue() {
   const todayStr = getTodayStr();
   const od = tasks.filter(t => !t.done && t.date < todayStr);
@@ -721,3 +807,142 @@ render();
 updateNotifHeaderBtn();
 if (!config.userId) { showSetup(); } else { pullFromCloud(); }
 setInterval(() => { const n=new Date(); if(n.getHours()===0&&n.getMinutes()===0) render(); }, 60000);
+
+// オンライン復帰時に未同期データを自動送信
+window.addEventListener('online', async () => {
+  setSyncUI('syncing', '再接続中…');
+  if (config.userId && localStorage.getItem(PENDING_KEY)) {
+    showToast('オンラインに復帰しました。同期中…');
+    await pushToCloud();
+    showToast('同期完了 ✓');
+  } else {
+    setSyncUI('ok', '同期済み ✓');
+  }
+});
+
+window.addEventListener('offline', () => {
+  setSyncUI('err', 'オフライン');
+});
+
+// ── ピンチズームをブロック ──
+document.addEventListener('touchstart', e => {
+  if (e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+document.addEventListener('touchmove', e => {
+  if (e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+
+// ── ドラッグ＆ドロップで日付変更 ──
+let dragTask  = null; // ドラッグ中のタスクオブジェクト
+let dragEl    = null; // ドラッグ中のDOM要素
+let dragClone = null; // ドラッグ中のゴースト要素
+let dragOffX  = 0;
+let dragOffY  = 0;
+
+function initDrag(taskEl, task, startX, startY) {
+  dragTask = task;
+  dragEl   = taskEl;
+  document.body.classList.add('dragging-active');
+
+  // ゴースト要素を作成
+  dragClone = taskEl.cloneNode(true);
+  dragClone.style.cssText = `
+    position: fixed; z-index: 1000; pointer-events: none;
+    opacity: 0.85; transform: scale(1.04) rotate(1deg);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.22);
+    width: ${taskEl.offsetWidth}px;
+    transition: none;
+  `;
+  document.body.appendChild(dragClone);
+
+  // オフセット計算
+  const rect = taskEl.getBoundingClientRect();
+  dragOffX = startX - rect.left;
+  dragOffY = startY - rect.top;
+  moveDragClone(startX, startY);
+
+  // 元要素を薄く
+  taskEl.style.opacity = '0.35';
+}
+
+function moveDragClone(x, y) {
+  if (!dragClone) return;
+  dragClone.style.left = (x - dragOffX) + 'px';
+  dragClone.style.top  = (y - dragOffY) + 'px';
+
+  // ホバー中の列をハイライト
+  document.querySelectorAll('.col-body').forEach(c => c.classList.remove('drag-over'));
+  const col = getColBodyAt(x, y);
+  if (col) col.classList.add('drag-over');
+}
+
+function getColBodyAt(x, y) {
+  // 座標にある .col-body を取得
+  const els = document.elementsFromPoint(x, y);
+  return els.find(el => el.classList.contains('col-body'));
+}
+
+function getDateFromColBody(col) {
+  // columns-wrap内の何番目かで日付を特定
+  const wrap = document.getElementById('columns-wrap');
+  const cols = Array.from(wrap.children);
+  const idx  = cols.indexOf(col);
+  if (idx < 0) return null;
+  const dates = getWeekDates(weekOffset);
+  return dates[idx] ? toDateStr(dates[idx]) : null;
+}
+
+function endDrag(x, y) {
+  if (!dragTask || !dragEl) return;
+
+  const col     = getColBodyAt(x, y);
+  const newDate = col ? getDateFromColBody(col) : null;
+
+  if (newDate && newDate !== dragTask.date) {
+    const i = tasks.findIndex(t => t.id === dragTask.id);
+    if (i >= 0) {
+      tasks[i].date = newDate;
+      schedulePush();
+      showToast(`${newDate} に移動しました`);
+    }
+  }
+
+  // クリーンアップ
+  document.querySelectorAll('.col-body').forEach(c => c.classList.remove('drag-over'));
+  document.body.classList.remove('dragging-active');
+  if (dragClone) { dragClone.remove(); dragClone = null; }
+  if (dragEl)    { dragEl.style.opacity = ''; dragEl = null; }
+  dragTask = null;
+  render();
+}
+
+function cancelDrag() {
+  document.querySelectorAll('.col-body').forEach(c => c.classList.remove('drag-over'));
+  document.body.classList.remove('dragging-active');
+  if (dragClone) { dragClone.remove(); dragClone = null; }
+  if (dragEl)    { dragEl.style.opacity = ''; dragEl = null; }
+  dragTask = null;
+}
+
+// マウスイベント（PC）
+document.addEventListener('mousemove', e => {
+  if (dragTask) moveDragClone(e.clientX, e.clientY);
+});
+document.addEventListener('mouseup', e => {
+  if (dragTask) endDrag(e.clientX, e.clientY);
+});
+
+// タッチイベント（スマホ・タブレット）
+document.addEventListener('touchmove', e => {
+  if (!dragTask) return;
+  if (e.touches.length === 1) {
+    e.preventDefault();
+    moveDragClone(e.touches[0].clientX, e.touches[0].clientY);
+  }
+}, { passive: false });
+document.addEventListener('touchend', e => {
+  if (!dragTask) return;
+  const t = e.changedTouches[0];
+  endDrag(t.clientX, t.clientY);
+});
+document.addEventListener('touchcancel', cancelDrag);
