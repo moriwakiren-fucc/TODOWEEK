@@ -90,11 +90,13 @@ header {
 
 /* ── スクロールエリア ── */
 #scroll-wrap {
-  flex: 1; overflow-x: auto; overflow-y: hidden;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   min-height: 0;
-  /* スクロールバー非表示（見た目） */
   scrollbar-width: none;
+  touch-action: pan-x pan-y;
 }
 #scroll-wrap::-webkit-scrollbar { display: none; }
 
