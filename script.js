@@ -23,13 +23,16 @@ let fmt = { bold: false, underline: false, 'double-underline': false, fg: null, 
 
 // ── SUBJECT COLOR MAP ──
 const SUBJECT_COLORS = {
-  '国語':   { bg: '#ffeaea', fg: '#cc2222', border: '#ffb3b3' },
-  '数学':   { bg: '#e8f0ff', fg: '#1a44cc', border: '#b3c8ff' },
-  '英語':   { bg: '#fffbe0', fg: '#998800', border: '#ffe680' },
-  '化学':   { bg: '#eafff0', fg: '#1a8840', border: '#b3eec8' },
-  '生物':   { bg: '#eafff0', fg: '#1a8840', border: '#b3eec8' },
-  '日本史': { bg: '#f5eaff', fg: '#7722cc', border: '#ddb3ff' },
-  '情報':   { bg: '#e0faff', fg: '#0088aa', border: '#b3eeff' },
+  '国語':   { bg: '#ffeaea', fg: '#cc2222' },
+  '数学':   { bg: '#e8f0ff', fg: '#1a44cc' },
+  '英語':   { bg: '#fffbe0', fg: '#998800' },
+  '化学':   { bg: '#eafff0', fg: '#1a8840' },
+  '物理':   { bg: '#eafff0', fg: '#1a8840' },
+  '生物':   { bg: '#eafff0', fg: '#1a8840' },
+  '地理':   { bg: '#f5eaff', fg: '#7722cc' },
+  '日本史': { bg: '#f5eaff', fg: '#7722cc' },
+  '世界史': { bg: '#f5eaff', fg: '#7722cc' },
+  '情報':   { bg: '#e0faff', fg: '#0088aa' },
 };
 const CUSTOM_COLOR  = { bg: '#ffeaf5', fg: '#cc2266', border: '#ffb3d9' };
 const DEFAULT_COLOR = { bg: '#f0f2f5', fg: '#6b7594', border: '#dde1ea' };
@@ -487,11 +490,12 @@ function makeTaskEl(task, isOverdue = false) {
   const div = document.createElement('div');
   div.className = 'task-item' + (task.done ? ' done' : '');
   const c = getColor(task.subject);
+  const effectiveFg = (task.format && task.format.fg) ? task.format.fg : c.fg;
   div.style.background  = (task.format && task.format.bg) ? task.format.bg : c.bg;
-  div.style.borderColor = c.fg;
+  div.style.borderColor = effectiveFg;
 
   const cb = document.createElement('div'); cb.className = 'task-cb';
-  cb.style.borderColor = c.fg;
+  cb.style.borderColor = effectiveFg;
   cb.addEventListener('click', e => {
     e.stopPropagation(); task.done = !task.done; schedulePush(); render();
   });
@@ -509,7 +513,7 @@ function makeTaskEl(task, isOverdue = false) {
   // タイトル行
   const titleEl = document.createElement('div'); titleEl.className = 'task-title-line';
   titleEl.textContent          = task.title;
-  titleEl.style.color          = (f.fg) ? f.fg : c.fg;
+  titleEl.style.color          = effectiveFg;
   titleEl.style.fontWeight     = f.bold ? '700' : '600';
   titleEl.style.textDecoration = td;
   lbl.appendChild(titleEl);
@@ -523,7 +527,7 @@ function makeTaskEl(task, isOverdue = false) {
       const tag = document.createElement('span'); tag.className = 'subject-tag';
       tag.textContent = task.subject;
       tag.style.background = 'transparent';
-      tag.style.color = c.fg; tag.style.border = `1.5px solid ${c.fg}`;
+      tag.style.color = effectiveFg; tag.style.border = `1.5px solid ${effectiveFg}`;
       sub.appendChild(tag);
     }
     if (hasRemind) {
@@ -767,7 +771,7 @@ function openModal(id, dateStr) {
     document.getElementById('f-date').value   = t.date   || '';
     document.getElementById('f-remind').value = t.remind || '0';
     buildNotifTimeSelects(t.notifTime || '07:00');
-    const presets = ['なし','国語','数学','英語','化学','生物','日本史','情報'];
+    const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
     if (presets.includes(t.subject)) {
       document.getElementById('f-subject').value = t.subject;
     } else if (t.subject) {
