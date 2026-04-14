@@ -13,7 +13,8 @@ try { tasks = JSON.parse(localStorage.getItem(TASKS_KEY)) || []; } catch(e) {}
 
 let syncTimer      = null;
 let editingId      = null;
-let weekOffset     = 0;
+let dayOffset      = 0;   // 今日から何日ずらして表示するか（日単位）
+let visibleCols    = 7;   // 現在表示している列数
 let overdueOpen    = true;
 let currentDateStr = '';
 let cachedVapidKey = null;
@@ -92,9 +93,9 @@ function isHoliday(ds) { return !!HOLIDAY_MAP[ds]; }
 // ── HELPERS ──
 const DAY = ['日','月','火','水','木','金','土'];
 function toDateStr(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
-function getWeekDates(offset = 0) {
-  const t = new Date(); t.setHours(0,0,0,0); t.setDate(t.getDate() + offset * 7);
-  return Array.from({length:7}, (_,i) => { const d=new Date(t); d.setDate(t.getDate()+i); return d; });
+function getVisibleDates(offset = 0, count = 7) {
+  const t = new Date(); t.setHours(0,0,0,0); t.setDate(t.getDate() + offset);
+  return Array.from({length: count}, (_, i) => { const d = new Date(t); d.setDate(t.getDate() + i); return d; });
 }
 function getTodayStr() { return toDateStr(new Date()); }
 function genId() { return Math.random().toString(36).slice(2,9) + Date.now().toString(36); }
@@ -173,8 +174,8 @@ function schedulePush() {
 }
 
 // ── GOAL ──
-function loadGoal() { return localStorage.getItem(GOAL_KEY + '_' + weekOffset) || ''; }
-function saveGoal(v) { localStorage.setItem(GOAL_KEY + '_' + weekOffset, v); }
+function loadGoal() { return localStorage.getItem(GOAL_KEY + '_' + Math.floor(dayOffset / 7)) || ''; }
+function saveGoal(v) { localStorage.setItem(GOAL_KEY + '_' + Math.floor(dayOffset / 7), v); }
 
 // ── SERVICE WORKER ──
 async function registerServiceWorker() {
@@ -392,24 +393,25 @@ function calcColWidth() {
   const natural = W / TOTAL; // 7列ぴったりの幅
   if (natural >= COL_MIN) {
     // 7列が画面にピッタリ収まる → 割り切れる幅に
+    visibleCols = 7;
     return Math.floor(W / TOTAL);
   }
-  // 4列以上が収まる最大整数列数
-  const visibleCols = Math.max(4, Math.floor(W / COL_MIN));
+  // 画面に収まる列数（最低2列）
+  visibleCols = Math.max(2, Math.floor(W / COL_MIN));
   return Math.floor(W / visibleCols);
 }
 
 function render() {
-  const dates    = getWeekDates(weekOffset);
+  const dates    = getVisibleDates(dayOffset, visibleCols);
   const todayStr = getTodayStr();
   const colW     = calcColWidth();
 
   // CSS変数として列幅を設定
   document.documentElement.style.setProperty('--col-w', colW + 'px');
 
-  // scroll-innerの幅を7列分にピッタリ設定（隙間をなくす）
+  // scroll-innerの幅を表示列数分にピッタリ設定（横スクロールなし）
   const scrollInner = document.getElementById('scroll-inner');
-  if (scrollInner) scrollInner.style.width = (colW * 7) + 'px';
+  if (scrollInner) scrollInner.style.width = (colW * visibleCols) + 'px';
 
   // ── Goal row ──
   const goalWrap = document.getElementById('goal-row-wrap');
@@ -418,7 +420,7 @@ function render() {
     const nav = document.createElement('div'); nav.className = 'goal-nav';
     const prevBtn = document.createElement('button');
     prevBtn.className = 'goal-nav-btn'; prevBtn.textContent = '＜'; prevBtn.title = '前の週';
-    prevBtn.addEventListener('click', () => { weekOffset--; render(); });
+    prevBtn.addEventListener('click', () => { dayOffset -= visibleCols; render(); });
     const goalInput = document.createElement('input');
     goalInput.type = 'text'; goalInput.id = 'goal-input';
     goalInput.placeholder = '📌 長期的な目標を入力…';
@@ -426,7 +428,7 @@ function render() {
     goalInput.addEventListener('input', () => saveGoal(goalInput.value));
     const nextBtn = document.createElement('button');
     nextBtn.className = 'goal-nav-btn'; nextBtn.textContent = '＞'; nextBtn.title = '次の週';
-    nextBtn.addEventListener('click', () => { weekOffset++; render(); });
+    nextBtn.addEventListener('click', () => { dayOffset += visibleCols; render(); });
     nav.appendChild(prevBtn); nav.appendChild(goalInput); nav.appendChild(nextBtn);
     goalWrap.appendChild(nav);
   }
@@ -1001,7 +1003,7 @@ function getDateFromColBody(col) {
   const cols = Array.from(wrap.children);
   const idx  = cols.indexOf(col);
   if (idx < 0) return null;
-  const dates = getWeekDates(weekOffset);
+  const dates = getVisibleDates(dayOffset, visibleCols);
   return dates[idx] ? toDateStr(dates[idx]) : null;
 }
 
