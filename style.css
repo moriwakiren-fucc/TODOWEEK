@@ -159,11 +159,12 @@ header {
 
 /* ── TASK ITEM ── */
 .task-item {
-  display: flex; align-items: flex-start; gap: 6px; margin-bottom: 6px;
+  display: block; margin-bottom: 6px;
   padding: 7px 6px; border-radius: 10px;
   background: var(--surface2); border: 1px solid var(--border);
   cursor: pointer; transition: opacity 0.15s, box-shadow 0.15s;
   animation: slideIn 0.18s ease; min-width: 0;
+  overflow: hidden; /* clearfix for float */
 }
 @keyframes slideIn { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:translateY(0)} }
 .task-item:hover  { box-shadow: var(--shadow-sm); }
@@ -171,10 +172,11 @@ header {
 .task-item.done   { opacity: 0.55; }
 
 .task-cb {
-  width: 22px; height: 22px; min-width: 22px; border-radius: 6px;
-  border: 2px solid var(--border2); background: rgba(255,255,255,0.7); flex-shrink: 0;
+  float: left; margin-right: 6px; margin-top: 1px;
+  width: 22px; height: 22px; border-radius: 6px;
+  border: 2px solid var(--border2); background: rgba(255,255,255,0.7);
   display: flex; align-items: center; justify-content: center;
-  margin-top: 1px; transition: background 0.15s, border-color 0.15s; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s; cursor: pointer; flex-shrink: 0;
 }
 .task-item.done .task-cb { background: #3db86a; border-color: #3db86a; }
 .task-cb::after {
@@ -186,7 +188,7 @@ header {
 
 /* タスクラベル：タイトル横並び、サブ情報を下に */
 .task-label {
-  min-width: 0; flex: 1; color: var(--text);
+  display: block; color: var(--text);
 }
 .task-title-line {
   font-size: 13px; font-weight: 600; line-height: 1.4;
