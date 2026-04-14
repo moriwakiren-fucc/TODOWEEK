@@ -164,7 +164,10 @@ header {
   background: var(--surface2); border: 1px solid var(--border);
   cursor: pointer; transition: opacity 0.15s, box-shadow 0.15s;
   animation: slideIn 0.18s ease; min-width: 0;
-  overflow: hidden; /* clearfix for float */
+}
+/* フロート（チェックボックス）を包むためのクリアフィックス */
+.task-item::after {
+  content: ''; display: table; clear: both;
 }
 @keyframes slideIn { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:translateY(0)} }
 .task-item:hover  { box-shadow: var(--shadow-sm); }
