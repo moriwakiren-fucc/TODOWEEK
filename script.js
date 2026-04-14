@@ -38,6 +38,45 @@ const SUBJECT_COLORS = {
 const CUSTOM_COLOR  = { bg: '#ffeaf5', fg: '#cc2266', border: '#ffb3d9' };
 const DEFAULT_COLOR = { bg: '#f0f2f5', fg: '#6b7594', border: '#dde1ea' };
 
+// 後方互換：notifTime文字列 or notifTimes配列 → 配列で返す
+function getNotifsArray(task) {
+  if (Array.isArray(task.notifTimes) && task.notifTimes.length) {
+    return task.notifTimes.filter(t => t && t !== 'none');
+  }
+  if (task.notifTime && task.notifTime !== 'none') return [task.notifTime];
+  return [];
+}
+
+// リマインド日を YYYY-MM-DD 文字列で返す（未設定は '9999-99-99'）
+function getRemindDate(task) {
+  if (!task.remind || task.remind === '0' || !task.date) return '9999-99-99';
+  if (task.remind === 'today') return task.date;
+  const [y, m, d] = task.date.split('-').map(Number);
+  const remindMs = Date.UTC(y, m - 1, d) - parseInt(task.remind, 10) * 86400000;
+  const rd = new Date(remindMs);
+  return `${rd.getUTCFullYear()}-${String(rd.getUTCMonth()+1).padStart(2,'0')}-${String(rd.getUTCDate()).padStart(2,'0')}`;
+}
+
+function getFirstNotifTime(task) {
+  const times = getNotifsArray(task);
+  return times.length ? times[0] : '99:99';
+}
+
+// 列内ソート：手動colOrderがあればそれ優先、なければリマインド日時順
+function sortTasksForDate(dateTasks) {
+  const hasManual = dateTasks.some(t => t.colOrder !== undefined);
+  const autoSort = arr => [...arr].sort((a, b) => {
+    const ra = getRemindDate(a), rb = getRemindDate(b);
+    if (ra !== rb) return ra < rb ? -1 : 1;
+    const ta = getFirstNotifTime(a), tb = getFirstNotifTime(b);
+    return ta < tb ? -1 : ta > tb ? 1 : 0;
+  });
+  if (!hasManual) return autoSort(dateTasks);
+  const withOrder    = dateTasks.filter(t => t.colOrder !== undefined).sort((a, b) => a.colOrder - b.colOrder);
+  const withoutOrder = autoSort(dateTasks.filter(t => t.colOrder === undefined));
+  return [...withOrder, ...withoutOrder];
+}
+
 function getColor(subject) {
   if (!subject || subject === 'なし') return DEFAULT_COLOR;
   if (SUBJECT_COLORS[subject]) return SUBJECT_COLORS[subject];
@@ -452,14 +491,7 @@ function render() {
       const ds  = toDateStr(d); const dow = d.getDay(); const hol = isHoliday(ds);
       const col = document.createElement('div'); col.className = 'col-body';
       if (ds === todayStr) col.classList.add('today-col');
-      tasks
-        .filter(t => t.date === ds)
-        .sort((a, b) => {
-          // notifTimeがnone/未設定は最後尾
-          const ta = (!a.notifTime || a.notifTime === 'none') ? '99:99' : a.notifTime;
-          const tb = (!b.notifTime || b.notifTime === 'none') ? '99:99' : b.notifTime;
-          return ta < tb ? -1 : ta > tb ? 1 : 0;
-        })
+      sortTasksForDate(tasks.filter(t => t.date === ds))
         .forEach(t => col.appendChild(makeTaskEl(t)));
       const btn = document.createElement('button');
       btn.className = 'new-btn'; btn.textContent = '＋';
@@ -482,6 +514,7 @@ window.addEventListener('resize', () => {
 function makeTaskEl(task, isOverdue = false) {
   const div = document.createElement('div');
   div.className = 'task-item' + (task.done ? ' done' : '');
+  div.dataset.taskId = task.id; // 縦ドラッグ並び替え用
   const c = getColor(task.subject);
   const effectiveFg = (task.format && task.format.fg) ? task.format.fg : c.fg;
   div.style.background  = (task.format && task.format.bg) ? task.format.bg : c.bg;
@@ -525,7 +558,8 @@ function makeTaskEl(task, isOverdue = false) {
     }
     if (hasRemind) {
       const ri = document.createElement('div'); ri.className='remind-info';
-      const timeLabel   = (!task.notifTime || task.notifTime === 'none') ? '' : ` ${task.notifTime}`;
+      const timesArr   = getNotifsArray(task);
+      const timeLabel  = timesArr.length ? ' ' + timesArr.join(' / ') : '';
       const remindLabel = task.remind === 'today' ? '当日' : `${task.remind}日前`;
       ri.textContent = `⏰ ${remindLabel}${timeLabel}`;
       sub.appendChild(ri);
@@ -584,41 +618,83 @@ function makeTaskEl(task, isOverdue = false) {
   return div;
 }
 
-// ── 通知時刻プルダウン生成（時・分別々） ──
-function buildNotifTimeSelects(selectedVal) {
-  const isNone = (!selectedVal || selectedVal === 'none');
-  const selH = document.getElementById('f-notif-hour');
-  const selM = document.getElementById('f-notif-min');
+// ── 複数通知時刻UI ──
+function buildNotifTimesList(selectedTimes) {
+  const group = document.getElementById('f-notif-time-group');
+  if (!group) return;
+  group.innerHTML = '';
 
-  // 時プルダウン（0〜23のみ）
-  selH.innerHTML = '';
-  for (let h = 0; h < 24; h++) {
-    const val = String(h).padStart(2, '0');
-    const opt = document.createElement('option');
-    opt.value = val; opt.textContent = `${h}時`;
-    if (!isNone && selectedVal.slice(0,2) === val) opt.selected = true;
-    selH.appendChild(opt);
-  }
-  if (isNone) selH.value = '07';
+  const label = document.createElement('label');
+  label.className = 'form-label'; label.textContent = '通知時刻';
+  group.appendChild(label);
 
-  // 分プルダウン（5分刻み）
-  selM.innerHTML = '';
-  for (let m = 0; m < 60; m += 5) {
-    const val = String(m).padStart(2, '0');
-    const opt = document.createElement('option');
-    opt.value = val; opt.textContent = `${val}分`;
-    if (!isNone && selectedVal.slice(3,5) === val) opt.selected = true;
-    selM.appendChild(opt);
-  }
-  if (isNone) selM.value = '00';
+  const list = document.createElement('div');
+  list.id = 'notif-times-list'; list.className = 'notif-times-list';
+  group.appendChild(list);
+
+  const times = (selectedTimes && selectedTimes.length) ? selectedTimes : ['07:00'];
+  times.forEach(t => list.appendChild(makeNotifTimeRow(t)));
+  updateRemoveButtons();
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button'; addBtn.className = 'notif-time-add-btn';
+  addBtn.textContent = '＋ 通知を追加';
+  addBtn.addEventListener('click', () => {
+    document.getElementById('notif-times-list').appendChild(makeNotifTimeRow('07:00'));
+    updateRemoveButtons();
+  });
+  group.appendChild(addBtn);
 }
 
-function getNotifTimeValue() {
-  const remindVal = document.getElementById('f-remind').value;
-  if (remindVal === '0') return 'none';
-  const h = document.getElementById('f-notif-hour').value;
-  const m = document.getElementById('f-notif-min').value;
-  return `${h}:${m}`;
+function makeNotifTimeRow(time) {
+  const safeTime = (time && time !== 'none') ? time : '07:00';
+  const row = document.createElement('div'); row.className = 'notif-time-row';
+
+  const wrap = document.createElement('div'); wrap.className = 'time-select-row';
+
+  const selH = document.createElement('select'); selH.className = 'form-select time-select-h';
+  for (let h = 0; h < 24; h++) {
+    const v = String(h).padStart(2,'0');
+    const o = document.createElement('option'); o.value = v; o.textContent = `${h}時`;
+    if (safeTime.slice(0,2) === v) o.selected = true;
+    selH.appendChild(o);
+  }
+  const sep = document.createElement('span'); sep.className = 'time-select-sep'; sep.textContent = ':';
+  const selM = document.createElement('select'); selM.className = 'form-select time-select-m';
+  for (let m = 0; m < 60; m += 5) {
+    const v = String(m).padStart(2,'0');
+    const o = document.createElement('option'); o.value = v; o.textContent = `${v}分`;
+    if (safeTime.slice(3,5) === v) o.selected = true;
+    selM.appendChild(o);
+  }
+  wrap.appendChild(selH); wrap.appendChild(sep); wrap.appendChild(selM);
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button'; removeBtn.className = 'notif-time-remove-btn';
+  removeBtn.textContent = '✕';
+  removeBtn.addEventListener('click', () => { row.remove(); updateRemoveButtons(); });
+
+  row.appendChild(wrap); row.appendChild(removeBtn);
+  return row;
+}
+
+function updateRemoveButtons() {
+  const rows = document.querySelectorAll('#notif-times-list .notif-time-row');
+  rows.forEach(row => {
+    const btn = row.querySelector('.notif-time-remove-btn');
+    if (btn) btn.style.visibility = rows.length > 1 ? 'visible' : 'hidden';
+  });
+}
+
+function getNotifTimesValue() {
+  const remind = document.getElementById('f-remind').value;
+  if (remind === '0') return [];
+  const rows = document.querySelectorAll('#notif-times-list .notif-time-row');
+  return Array.from(rows).map(row => {
+    const h = row.querySelector('.time-select-h').value;
+    const m = row.querySelector('.time-select-m').value;
+    return `${h}:${m}`;
+  });
 }
 
 function updateNotifTimeVisibility() {
@@ -641,9 +717,7 @@ function renderOverdue() {
   }
   od.sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-    const ta = (!a.notifTime || a.notifTime === 'none') ? '99:99' : a.notifTime;
-    const tb = (!b.notifTime || b.notifTime === 'none') ? '99:99' : b.notifTime;
-    return ta < tb ? -1 : ta > tb ? 1 : 0;
+    return getFirstNotifTime(a) < getFirstNotifTime(b) ? -1 : getFirstNotifTime(a) > getFirstNotifTime(b) ? 1 : 0;
   });
   const list = document.getElementById('overdue-list'); list.innerHTML = '';
   od.forEach(t => list.appendChild(makeTaskEl(t, true)));
@@ -763,7 +837,10 @@ function openModal(id, dateStr) {
     document.getElementById('f-title').value  = t.title  || '';
     document.getElementById('f-date').value   = t.date   || '';
     document.getElementById('f-remind').value = t.remind || '0';
-    buildNotifTimeSelects(t.notifTime || '07:00');
+    const existingTimes = Array.isArray(t.notifTimes) && t.notifTimes.length
+      ? t.notifTimes
+      : (t.notifTime && t.notifTime !== 'none' ? [t.notifTime] : ['07:00']);
+    buildNotifTimesList(existingTimes);
     const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
     if (presets.includes(t.subject)) {
       document.getElementById('f-subject').value = t.subject;
@@ -785,7 +862,7 @@ function openModal(id, dateStr) {
     document.getElementById('f-remind').value  = '2';
     document.getElementById('f-subject').value = 'なし';
     document.getElementById('f-custom-subject').value = '';
-    buildNotifTimeSelects('07:00');
+    buildNotifTimesList(['07:00']);
     initFmtFromSubject('なし');
     document.getElementById('modal-actions').innerHTML = `
       <button class="btn-primary" id="modal-save">保存する</button>
@@ -814,16 +891,23 @@ function saveTask() {
   if (!title) { showToast('タイトルを入力してください'); return; }
   const finalDate = editingId ? document.getElementById('f-date').value : currentDateStr;
   if (!finalDate) { showToast('日付が設定されていません'); return; }
-  const remind    = document.getElementById('f-remind').value;
-  const notifTime = getNotifTimeValue(); // 'none' or 'HH:MM'
-  const subject   = getSubjectValue();
-  const format    = { bold:fmt.bold, underline:fmt.underline, 'double-underline':fmt['double-underline'], fg:fmt.fg, bg:fmt.bg };
+  const remind     = document.getElementById('f-remind').value;
+  const notifTimes = getNotifTimesValue(); // 配列
+  const subject    = getSubjectValue();
+  const format     = { bold:fmt.bold, underline:fmt.underline, 'double-underline':fmt['double-underline'], fg:fmt.fg, bg:fmt.bg };
   if (editingId) {
     const i = tasks.findIndex(t => t.id === editingId);
-    if (i >= 0) tasks[i] = { ...tasks[i], title, date:finalDate, remind, notifTime, subject, format };
+    if (i >= 0) {
+      const prev = tasks[i];
+      const updated = { ...prev, title, date:finalDate, remind, notifTimes, subject, format };
+      // 日付またはリマインドが変わったら手動並び順をリセット
+      if (prev.date !== finalDate || prev.remind !== remind) delete updated.colOrder;
+      delete updated.notifTime; // 旧フィールド削除
+      tasks[i] = updated;
+    }
     showToast('更新しました ✓');
   } else {
-    tasks.push({ id:genId(), title, date:finalDate, remind, notifTime, subject, done:false, format });
+    tasks.push({ id:genId(), title, date:finalDate, remind, notifTimes, subject, done:false, format });
     showToast('追加しました ✓');
   }
   schedulePush(); closeModal(); render();
@@ -927,7 +1011,12 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
 })();
 
 // ── EVENTS ──
-document.getElementById('modal-overlay').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+document.getElementById('modal-overlay').addEventListener('click', function(e) {
+  if (e.target !== this) return;
+  const title = document.getElementById('f-title').value.trim();
+  if (!title) { closeModal(); return; } // タイトルなし → 破棄
+  saveTask(); // タイトルあり → 保存
+});
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('sync-status').addEventListener('click', showSetup);
 document.getElementById('logo-btn').addEventListener('click', showSetup);
@@ -1049,12 +1138,34 @@ function endDrag(x, y) {
   const newDate = col ? getDateFromColBody(col) : null;
 
   if (newDate && newDate !== dragTask.date) {
+    // 別の列（日付変更）
     const i = tasks.findIndex(t => t.id === dragTask.id);
     if (i >= 0) {
       tasks[i].date = newDate;
+      delete tasks[i].colOrder; // 移動先ではデフォルト順に
       schedulePush();
       showToast(`${newDate} に移動しました`);
     }
+  } else if (newDate && newDate === dragTask.date && col) {
+    // 同じ列（縦並び替え）
+    const taskEls  = Array.from(col.querySelectorAll('.task-item'));
+    const otherEls = taskEls.filter(el => el !== dragEl);
+
+    // ドロップ位置から挿入インデックスを決定
+    let insertIdx = otherEls.length;
+    for (let i = 0; i < otherEls.length; i++) {
+      const rect = otherEls[i].getBoundingClientRect();
+      if (y < rect.top + rect.height / 2) { insertIdx = i; break; }
+    }
+
+    // 新しい順序でcolOrderを割り当て
+    const newOrder = otherEls.map(el => el.dataset.taskId);
+    newOrder.splice(insertIdx, 0, dragTask.id);
+    newOrder.forEach((id, idx) => {
+      const t = tasks.find(obj => obj.id === id);
+      if (t) t.colOrder = idx;
+    });
+    schedulePush();
   }
 
   // クリーンアップ
