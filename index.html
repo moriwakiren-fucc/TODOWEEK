@@ -27,7 +27,14 @@
       <div id="sync-dot"></div>
       <span id="sync-label">未設定</span>
     </div>
-    <button id="notif-header-btn" class="notif-header-btn" title="通知設定" onclick="showNotifModal()">🔔</button>
+    <div id="settings-wrap">
+      <button id="settings-btn" title="設定">⚙️</button>
+      <div id="settings-menu">
+        <button class="settings-item" id="settings-notif">🔔 通知設定</button>
+        <hr class="settings-divider">
+        <button class="settings-item" id="settings-cache">🔄 キャッシュをクリアして再読み込み</button>
+      </div>
+    </div>
   </header>
 
   <!-- ── MAIN TABLE ── -->
