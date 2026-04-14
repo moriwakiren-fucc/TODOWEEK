@@ -282,18 +282,9 @@ async function deleteDeviceSub(endpoint) {
   await refreshNotifModal();
 }
 
-// ── ヘッダーの🔔ボタン状態更新 ──
+// ── ヘッダーの🔔ボタン状態更新（ボタン削除のためno-op） ──
 async function updateNotifHeaderBtn() {
-  const btn = document.getElementById('notif-header-btn');
-  if (!btn) return;
-  const sub = await getThisDeviceSub();
-  if (sub) {
-    btn.classList.add('active');
-    btn.title = '通知オン';
-  } else {
-    btn.classList.remove('active');
-    btn.title = '通知設定';
-  }
+  // 設定メニューに統合したため何もしない
 }
 
 // ── 通知モーダルを開く ──
@@ -890,6 +881,50 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
   setSyncUI('','未設定'); render(); showToast('ログアウトしました');
   setTimeout(showSetup, 400);
 });
+
+// ── ⚙️ 設定メニュー ──
+(function initSettingsMenu() {
+  const btn  = document.getElementById('settings-btn');
+  const menu = document.getElementById('settings-menu');
+  if (!btn || !menu) return;
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    menu.classList.toggle('open');
+  });
+
+  // メニュー外クリックで閉じる
+  document.addEventListener('click', () => menu.classList.remove('open'));
+  menu.addEventListener('click', e => e.stopPropagation());
+
+  // 通知設定
+  document.getElementById('settings-notif').addEventListener('click', () => {
+    menu.classList.remove('open');
+    showNotifModal();
+  });
+
+  // キャッシュをクリアして再読み込み
+  document.getElementById('settings-cache').addEventListener('click', async () => {
+    menu.classList.remove('open');
+    if (!confirm('キャッシュをクリアして再読み込みしますか？\n最新の更新が反映されます。')) return;
+    showToast('キャッシュをクリア中…');
+    try {
+      // Service Worker の登録を解除
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+      // 全キャッシュを削除
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+    } catch(e) {
+      console.warn('Cache clear error:', e);
+    }
+    window.location.reload();
+  });
+})();
 
 // ── EVENTS ──
 document.getElementById('modal-overlay').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
