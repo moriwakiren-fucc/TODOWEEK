@@ -248,19 +248,18 @@
         <input class="form-input" id="fav-f-title" type="text" placeholder="例: 数学の宿題">
       </div>
       <div class="form-group">
-        <label class="form-label">リマインド（期限からの相対日）</label>
+        <label class="form-label">リマインド</label>
         <select class="form-select" id="fav-f-remind">
           <option value="0">なし</option>
-          <option value="same">その日</option>
-          <option value="next1">次の日</option>
-          <option value="next2">2日後</option>
-          <option value="nextMon">次の月曜日</option>
-          <option value="nextTue">次の火曜日</option>
-          <option value="nextWed">次の水曜日</option>
-          <option value="nextThu">次の木曜日</option>
-          <option value="nextFri">次の金曜日</option>
-          <option value="nextSat">次の土曜日</option>
-          <option value="nextSun">次の日曜日</option>
+          <option value="today">当日</option>
+          <option value="1">1日前</option>
+          <option value="2" selected>2日前</option>
+          <option value="3">3日前</option>
+          <option value="5">5日前</option>
+          <option value="7">7日前</option>
+          <option value="10">10日前</option>
+          <option value="14">2週間前</option>
+          <option value="30">30日前</option>
         </select>
       </div>
       <div class="form-group" id="fav-f-notif-time-group"></div>
