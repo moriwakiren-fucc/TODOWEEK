@@ -74,33 +74,11 @@ function sortTasksForDate(dateTasks) {
   return [...withOrder, ...withoutOrder];
 }
 
-// お気に入りのリマインド値から表示文字列
+// お気に入りのリマインド値から表示文字列（通常と同じ値）
 const FAV_REMIND_LABELS = {
-  '0':'なし','same':'その日','next1':'次の日','next2':'2日後',
-  'nextMon':'次の月曜日','nextTue':'次の火曜日','nextWed':'次の水曜日',
-  'nextThu':'次の木曜日','nextFri':'次の金曜日','nextSat':'次の土曜日','nextSun':'次の日曜日'
+  '0':'なし','today':'当日','1':'1日前','2':'2日前','3':'3日前',
+  '5':'5日前','7':'7日前','10':'10日前','14':'2週間前','30':'30日前'
 };
-
-// お気に入りのremindValueを通常タスクのremind値に変換（基準日から）
-function favRemindToTask(favRemind, baseDate) {
-  if (!favRemind || favRemind === '0') return '0';
-  if (favRemind === 'same') return 'today';
-  if (favRemind === 'next1') return '1';
-  if (favRemind === 'next2') return '2';
-  // 次の曜日計算
-  const dowMap = { nextMon:1, nextTue:2, nextWed:3, nextThu:4, nextFri:5, nextSat:6, nextSun:0 };
-  if (dowMap[favRemind] !== undefined) {
-    const [y, m, d] = (baseDate || getTodayStr()).split('-').map(Number);
-    const base = new Date(y, m - 1, d);
-    const target = dowMap[favRemind];
-    let diff = (target - base.getDay() + 7) % 7 || 7;
-    const rd = new Date(base); rd.setDate(base.getDate() + diff);
-    const rdStr = toDateStr(rd);
-    // 期限日との差をdaysで返す（task.dateからの引き算になるのでここでは相対日数を返す）
-    return diff + ''; // 実際にはtask.dateがbaseなのでdiffがそのまま使えない場合も
-  }
-  return '0';
-}
 
 function getColor(subject) {
   if (!subject || subject === 'なし') return DEFAULT_COLOR;
@@ -219,6 +197,7 @@ async function pullFromCloud() {
       }
     }
     setSyncUI('ok', '同期済み ✓');
+    await pullFavoritesFromCloud(); // お気に入りも取得
     render();
   } catch(e) {
     setSyncUI('err', 'エラー');
@@ -235,6 +214,36 @@ function schedulePush() {
   }
   clearTimeout(syncTimer);
   syncTimer = setTimeout(pushToCloud, 1500);
+}
+
+// ── FAVORITESのクラウド同期 ──
+async function pushFavoritesToCloud() {
+  if (!config.userId || !navigator.onLine) return;
+  try {
+    await fetch(`${WORKER_URL}/favorites/${config.userId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(favorites),
+    });
+  } catch(e) { console.warn('fav push failed', e); }
+}
+
+async function pullFavoritesFromCloud() {
+  if (!config.userId || !navigator.onLine) return;
+  try {
+    const r = await fetch(`${WORKER_URL}/favorites/${config.userId}`);
+    if (!r.ok) return;
+    const data = await r.json();
+    if (Array.isArray(data)) {
+      favorites = data;
+      localStorage.setItem(FAV_KEY, JSON.stringify(favorites));
+    }
+  } catch(e) { console.warn('fav pull failed', e); }
+}
+
+function scheduleFavPush() {
+  localStorage.setItem(FAV_KEY, JSON.stringify(favorites));
+  clearTimeout(window._favSyncTimer);
+  window._favSyncTimer = setTimeout(pushFavoritesToCloud, 1500);
 }
 
 // ── GOAL ──
@@ -1068,7 +1077,10 @@ try { favorites = JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch(e) {}
 let favFmt = { bold:false, underline:false, 'double-underline':false, fg:null, bg:null };
 let editingFavId = null;
 
-function saveFavorites() { localStorage.setItem(FAV_KEY, JSON.stringify(favorites)); }
+function saveFavorites() {
+  localStorage.setItem(FAV_KEY, JSON.stringify(favorites));
+  scheduleFavPush();
+}
 
 function populateFavDropdown() {
   const sel = document.getElementById('f-fav-apply');
@@ -1095,6 +1107,11 @@ function populateFavDropdown() {
 
 function applyFavToModal(fav) {
   if (fav.title) document.getElementById('f-title').value = fav.title;
+  // リマインド
+  if (fav.remind) {
+    document.getElementById('f-remind').value = fav.remind;
+    updateNotifTimeVisibility('f-notif-time-group');
+  }
   // 教科
   const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
   if (fav.subject && presets.includes(fav.subject)) {
