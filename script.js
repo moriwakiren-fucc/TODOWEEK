@@ -3,7 +3,8 @@ const WORKER_URL = 'https://todoweek-api2.moriwakiren-fucc.workers.dev';
 const CFG_KEY    = 'todoweek_config_v1';
 const TASKS_KEY  = 'todoweek_tasks_v2';
 const GOAL_KEY   = 'todoweek_goal_v1';
-const SUB_KEY    = 'todoweek_sub_v1'; // この端末の購読情報
+const SUB_KEY    = 'todoweek_sub_v1';
+const FAV_KEY    = 'todoweek_favorites_v1';
 
 // ── STATE ──
 let config = {};
@@ -40,41 +41,65 @@ const DEFAULT_COLOR = { bg: '#f0f2f5', fg: '#6b7594', border: '#dde1ea' };
 
 // 後方互換：notifTime文字列 or notifTimes配列 → 配列で返す
 function getNotifsArray(task) {
-  if (Array.isArray(task.notifTimes) && task.notifTimes.length) {
+  if (Array.isArray(task.notifTimes) && task.notifTimes.length)
     return task.notifTimes.filter(t => t && t !== 'none');
-  }
   if (task.notifTime && task.notifTime !== 'none') return [task.notifTime];
   return [];
 }
 
-// リマインド日を YYYY-MM-DD 文字列で返す（未設定は '9999-99-99'）
+// リマインド日を YYYY-MM-DD で返す（未設定は '9999-99-99'）
 function getRemindDate(task) {
   if (!task.remind || task.remind === '0' || !task.date) return '9999-99-99';
   if (task.remind === 'today') return task.date;
   const [y, m, d] = task.date.split('-').map(Number);
-  const remindMs = Date.UTC(y, m - 1, d) - parseInt(task.remind, 10) * 86400000;
-  const rd = new Date(remindMs);
+  const ms = Date.UTC(y, m - 1, d) - parseInt(task.remind, 10) * 86400000;
+  const rd = new Date(ms);
   return `${rd.getUTCFullYear()}-${String(rd.getUTCMonth()+1).padStart(2,'0')}-${String(rd.getUTCDate()).padStart(2,'0')}`;
 }
 
 function getFirstNotifTime(task) {
-  const times = getNotifsArray(task);
-  return times.length ? times[0] : '99:99';
+  const t = getNotifsArray(task);
+  return t.length ? t[0] : '99:99';
 }
 
-// 列内ソート：手動colOrderがあればそれ優先、なければリマインド日時順
+// 列内ソート：colOrderがあれば優先、なければリマインド日時順
 function sortTasksForDate(dateTasks) {
-  const hasManual = dateTasks.some(t => t.colOrder !== undefined);
-  const autoSort = arr => [...arr].sort((a, b) => {
+  const withOrder    = dateTasks.filter(t => t.colOrder !== undefined).sort((a, b) => a.colOrder - b.colOrder);
+  const withoutOrder = dateTasks.filter(t => t.colOrder === undefined).sort((a, b) => {
     const ra = getRemindDate(a), rb = getRemindDate(b);
     if (ra !== rb) return ra < rb ? -1 : 1;
     const ta = getFirstNotifTime(a), tb = getFirstNotifTime(b);
     return ta < tb ? -1 : ta > tb ? 1 : 0;
   });
-  if (!hasManual) return autoSort(dateTasks);
-  const withOrder    = dateTasks.filter(t => t.colOrder !== undefined).sort((a, b) => a.colOrder - b.colOrder);
-  const withoutOrder = autoSort(dateTasks.filter(t => t.colOrder === undefined));
   return [...withOrder, ...withoutOrder];
+}
+
+// お気に入りのリマインド値から表示文字列
+const FAV_REMIND_LABELS = {
+  '0':'なし','same':'その日','next1':'次の日','next2':'2日後',
+  'nextMon':'次の月曜日','nextTue':'次の火曜日','nextWed':'次の水曜日',
+  'nextThu':'次の木曜日','nextFri':'次の金曜日','nextSat':'次の土曜日','nextSun':'次の日曜日'
+};
+
+// お気に入りのremindValueを通常タスクのremind値に変換（基準日から）
+function favRemindToTask(favRemind, baseDate) {
+  if (!favRemind || favRemind === '0') return '0';
+  if (favRemind === 'same') return 'today';
+  if (favRemind === 'next1') return '1';
+  if (favRemind === 'next2') return '2';
+  // 次の曜日計算
+  const dowMap = { nextMon:1, nextTue:2, nextWed:3, nextThu:4, nextFri:5, nextSat:6, nextSun:0 };
+  if (dowMap[favRemind] !== undefined) {
+    const [y, m, d] = (baseDate || getTodayStr()).split('-').map(Number);
+    const base = new Date(y, m - 1, d);
+    const target = dowMap[favRemind];
+    let diff = (target - base.getDay() + 7) % 7 || 7;
+    const rd = new Date(base); rd.setDate(base.getDate() + diff);
+    const rdStr = toDateStr(rd);
+    // 期限日との差をdaysで返す（task.dateからの引き算になるのでここでは相対日数を返す）
+    return diff + ''; // 実際にはtask.dateがbaseなのでdiffがそのまま使えない場合も
+  }
+  return '0';
 }
 
 function getColor(subject) {
@@ -514,7 +539,7 @@ window.addEventListener('resize', () => {
 function makeTaskEl(task, isOverdue = false) {
   const div = document.createElement('div');
   div.className = 'task-item' + (task.done ? ' done' : '');
-  div.dataset.taskId = task.id; // 縦ドラッグ並び替え用
+  div.dataset.taskId = task.id;
   const c = getColor(task.subject);
   const effectiveFg = (task.format && task.format.fg) ? task.format.fg : c.fg;
   div.style.background  = (task.format && task.format.bg) ? task.format.bg : c.bg;
@@ -558,8 +583,8 @@ function makeTaskEl(task, isOverdue = false) {
     }
     if (hasRemind) {
       const ri = document.createElement('div'); ri.className='remind-info';
-      const timesArr   = getNotifsArray(task);
-      const timeLabel  = timesArr.length ? ' ' + timesArr.join(' / ') : '';
+      const timesArr    = getNotifsArray(task);
+      const timeLabel   = timesArr.length ? ' ' + timesArr.join(' / ') : '';
       const remindLabel = task.remind === 'today' ? '当日' : `${task.remind}日前`;
       ri.textContent = `⏰ ${remindLabel}${timeLabel}`;
       sub.appendChild(ri);
@@ -619,8 +644,9 @@ function makeTaskEl(task, isOverdue = false) {
 }
 
 // ── 複数通知時刻UI ──
-function buildNotifTimesList(selectedTimes) {
-  const group = document.getElementById('f-notif-time-group');
+function buildNotifTimesList(selectedTimes, groupId) {
+  const gid   = groupId || 'f-notif-time-group';
+  const group = document.getElementById(gid);
   if (!group) return;
   group.innerHTML = '';
 
@@ -628,30 +654,30 @@ function buildNotifTimesList(selectedTimes) {
   label.className = 'form-label'; label.textContent = '通知時刻';
   group.appendChild(label);
 
-  const list = document.createElement('div');
-  list.id = 'notif-times-list'; list.className = 'notif-times-list';
+  const listId = gid + '-list';
+  const list   = document.createElement('div');
+  list.id = listId; list.className = 'notif-times-list';
   group.appendChild(list);
 
   const times = (selectedTimes && selectedTimes.length) ? selectedTimes : ['07:00'];
-  times.forEach(t => list.appendChild(makeNotifTimeRow(t)));
-  updateRemoveButtons();
+  times.forEach(t => list.appendChild(makeNotifTimeRow(t, listId)));
+  updateRemoveButtons(listId);
 
   const addBtn = document.createElement('button');
   addBtn.type = 'button'; addBtn.className = 'notif-time-add-btn';
   addBtn.textContent = '＋ 通知を追加';
   addBtn.addEventListener('click', () => {
-    document.getElementById('notif-times-list').appendChild(makeNotifTimeRow('07:00'));
-    updateRemoveButtons();
+    document.getElementById(listId).appendChild(makeNotifTimeRow('07:00', listId));
+    updateRemoveButtons(listId);
   });
   group.appendChild(addBtn);
 }
 
-function makeNotifTimeRow(time) {
+function makeNotifTimeRow(time, listId) {
   const safeTime = (time && time !== 'none') ? time : '07:00';
   const row = document.createElement('div'); row.className = 'notif-time-row';
 
   const wrap = document.createElement('div'); wrap.className = 'time-select-row';
-
   const selH = document.createElement('select'); selH.className = 'form-select time-select-h';
   for (let h = 0; h < 24; h++) {
     const v = String(h).padStart(2,'0');
@@ -672,24 +698,28 @@ function makeNotifTimeRow(time) {
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button'; removeBtn.className = 'notif-time-remove-btn';
   removeBtn.textContent = '✕';
-  removeBtn.addEventListener('click', () => { row.remove(); updateRemoveButtons(); });
+  removeBtn.addEventListener('click', () => {
+    row.remove();
+    if (listId) updateRemoveButtons(listId);
+  });
 
   row.appendChild(wrap); row.appendChild(removeBtn);
   return row;
 }
 
-function updateRemoveButtons() {
-  const rows = document.querySelectorAll('#notif-times-list .notif-time-row');
+function updateRemoveButtons(listId) {
+  const list = document.getElementById(listId);
+  if (!list) return;
+  const rows = list.querySelectorAll('.notif-time-row');
   rows.forEach(row => {
     const btn = row.querySelector('.notif-time-remove-btn');
     if (btn) btn.style.visibility = rows.length > 1 ? 'visible' : 'hidden';
   });
 }
 
-function getNotifTimesValue() {
-  const remind = document.getElementById('f-remind').value;
-  if (remind === '0') return [];
-  const rows = document.querySelectorAll('#notif-times-list .notif-time-row');
+function getNotifTimesFromGroup(gid) {
+  const listId = (gid || 'f-notif-time-group') + '-list';
+  const rows   = document.querySelectorAll(`#${listId} .notif-time-row`);
   return Array.from(rows).map(row => {
     const h = row.querySelector('.time-select-h').value;
     const m = row.querySelector('.time-select-m').value;
@@ -697,10 +727,25 @@ function getNotifTimesValue() {
   });
 }
 
-function updateNotifTimeVisibility() {
+function getNotifTimeValue() {
   const remindVal = document.getElementById('f-remind').value;
-  document.getElementById('f-notif-time-group').style.display =
-    (remindVal === '0') ? 'none' : 'block';
+  if (remindVal === '0') return 'none';
+  const h = document.getElementById('f-notif-hour').value;
+  const m = document.getElementById('f-notif-min').value;
+  return `${h}:${m}`;
+}
+
+function updateNotifTimeVisibility(gid) {
+  const remindSel = document.getElementById(gid === 'fav-f-notif-time-group' ? 'fav-f-remind' : 'f-remind');
+  const groupId   = gid || 'f-notif-time-group';
+  const group     = document.getElementById(groupId);
+  if (!group) return;
+  if (remindSel && remindSel.value === '0') {
+    group.style.display = 'none';
+  } else {
+    group.style.display = '';
+    if (!group.querySelector('.notif-times-list')) buildNotifTimesList(['07:00'], groupId);
+  }
 }
 function renderOverdue() {
   const todayStr = getTodayStr();
@@ -717,7 +762,8 @@ function renderOverdue() {
   }
   od.sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-    return getFirstNotifTime(a) < getFirstNotifTime(b) ? -1 : getFirstNotifTime(a) > getFirstNotifTime(b) ? 1 : 0;
+    const ta = getFirstNotifTime(a), tb = getFirstNotifTime(b);
+    return ta < tb ? -1 : ta > tb ? 1 : 0;
   });
   const list = document.getElementById('overdue-list'); list.innerHTML = '';
   od.forEach(t => list.appendChild(makeTaskEl(t, true)));
@@ -840,7 +886,7 @@ function openModal(id, dateStr) {
     const existingTimes = Array.isArray(t.notifTimes) && t.notifTimes.length
       ? t.notifTimes
       : (t.notifTime && t.notifTime !== 'none' ? [t.notifTime] : ['07:00']);
-    buildNotifTimesList(existingTimes);
+    buildNotifTimesList(existingTimes, 'f-notif-time-group');
     const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
     if (presets.includes(t.subject)) {
       document.getElementById('f-subject').value = t.subject;
@@ -862,17 +908,18 @@ function openModal(id, dateStr) {
     document.getElementById('f-remind').value  = '2';
     document.getElementById('f-subject').value = 'なし';
     document.getElementById('f-custom-subject').value = '';
-    buildNotifTimesList(['07:00']);
+    buildNotifTimesList(['07:00'], 'f-notif-time-group');
     initFmtFromSubject('なし');
     document.getElementById('modal-actions').innerHTML = `
       <button class="btn-primary" id="modal-save">保存する</button>
       <button class="btn-secondary" id="modal-cancel">キャンセル</button>`;
   }
+  populateFavDropdown();
   document.getElementById('modal-save').addEventListener('click', saveTask);
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
   document.getElementById('f-title').addEventListener('input', updatePreview);
-  document.getElementById('f-remind').addEventListener('change', updateNotifTimeVisibility);
-  updateNotifTimeVisibility();
+  document.getElementById('f-remind').addEventListener('change', () => updateNotifTimeVisibility('f-notif-time-group'));
+  updateNotifTimeVisibility('f-notif-time-group');
   document.getElementById('modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('f-title').focus(), 260);
   updateFmtUI();
@@ -892,17 +939,16 @@ function saveTask() {
   const finalDate = editingId ? document.getElementById('f-date').value : currentDateStr;
   if (!finalDate) { showToast('日付が設定されていません'); return; }
   const remind     = document.getElementById('f-remind').value;
-  const notifTimes = getNotifTimesValue(); // 配列
+  const notifTimes = remind === '0' ? [] : getNotifTimesFromGroup('f-notif-time-group');
   const subject    = getSubjectValue();
   const format     = { bold:fmt.bold, underline:fmt.underline, 'double-underline':fmt['double-underline'], fg:fmt.fg, bg:fmt.bg };
   if (editingId) {
     const i = tasks.findIndex(t => t.id === editingId);
     if (i >= 0) {
-      const prev = tasks[i];
+      const prev    = tasks[i];
       const updated = { ...prev, title, date:finalDate, remind, notifTimes, subject, format };
-      // 日付またはリマインドが変わったら手動並び順をリセット
       if (prev.date !== finalDate || prev.remind !== remind) delete updated.colOrder;
-      delete updated.notifTime; // 旧フィールド削除
+      delete updated.notifTime;
       tasks[i] = updated;
     }
     showToast('更新しました ✓');
@@ -981,6 +1027,12 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
   document.addEventListener('click', () => menu.classList.remove('open'));
   menu.addEventListener('click', e => e.stopPropagation());
 
+  // お気に入り設定
+  document.getElementById('settings-fav').addEventListener('click', () => {
+    menu.classList.remove('open');
+    openFavModal();
+  });
+
   // 通知設定
   document.getElementById('settings-notif').addEventListener('click', () => {
     menu.classList.remove('open');
@@ -1010,12 +1062,229 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
   });
 })();
 
+// ── お気に入り ──
+let favorites = [];
+try { favorites = JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch(e) {}
+let favFmt = { bold:false, underline:false, 'double-underline':false, fg:null, bg:null };
+let editingFavId = null;
+
+function saveFavorites() { localStorage.setItem(FAV_KEY, JSON.stringify(favorites)); }
+
+function populateFavDropdown() {
+  const sel = document.getElementById('f-fav-apply');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">⭐ お気に入り</option>';
+  favorites.forEach(fav => {
+    const opt = document.createElement('option');
+    opt.value = fav.id;
+    const subPart = (fav.subject && fav.subject !== 'なし') ? fav.subject + '　' : '';
+    opt.textContent = subPart + (fav.title || '（タイトルなし）');
+    sel.appendChild(opt);
+  });
+  if (!sel._favBound) {
+    sel._favBound = true;
+    sel.addEventListener('change', () => {
+      if (!sel.value) return;
+      const fav = favorites.find(f => f.id === sel.value);
+      if (!fav) return;
+      applyFavToModal(fav);
+      sel.value = '';
+    });
+  }
+}
+
+function applyFavToModal(fav) {
+  if (fav.title) document.getElementById('f-title').value = fav.title;
+  // 教科
+  const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
+  if (fav.subject && presets.includes(fav.subject)) {
+    document.getElementById('f-subject').value = fav.subject;
+    document.getElementById('custom-subject-group').style.display = 'none';
+  } else if (fav.subject && fav.subject !== 'なし') {
+    document.getElementById('f-subject').value = 'カスタム';
+    document.getElementById('f-custom-subject').value = fav.subject;
+    document.getElementById('custom-subject-group').style.display = 'block';
+  }
+  // 通知時刻
+  if (Array.isArray(fav.notifTimes) && fav.notifTimes.length) {
+    buildNotifTimesList(fav.notifTimes, 'f-notif-time-group');
+  }
+  // 書式
+  if (fav.format) {
+    fmt.bold = !!fav.format.bold;
+    fmt.underline = !!fav.format.underline;
+    fmt['double-underline'] = !!fav.format['double-underline'];
+    fmt.fg = fav.format.fg ?? null;
+    fmt.bg = fav.format.bg ?? null;
+    updateFmtUI();
+  }
+  updatePreview();
+  showToast('お気に入りを適用しました ✓');
+}
+
+function openFavModal(favId) {
+  editingFavId = favId || null;
+  const listSec = document.getElementById('fav-list-section');
+  const editSec = document.getElementById('fav-edit-section');
+
+  if (!favId) {
+    // リスト表示
+    listSec.style.display = ''; editSec.style.display = 'none';
+    renderFavList();
+  } else {
+    // 編集フォーム表示
+    listSec.style.display = 'none'; editSec.style.display = '';
+    const fav = favorites.find(f => f.id === favId) || {};
+    document.getElementById('fav-f-title').value = fav.title || '';
+    document.getElementById('fav-f-remind').value = fav.remind || '0';
+    const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
+    if (fav.subject && presets.includes(fav.subject)) {
+      document.getElementById('fav-f-subject').value = fav.subject;
+      document.getElementById('fav-custom-subject-group').style.display = 'none';
+    } else if (fav.subject && fav.subject !== 'なし') {
+      document.getElementById('fav-f-subject').value = 'カスタム';
+      document.getElementById('fav-f-custom-subject').value = fav.subject;
+      document.getElementById('fav-custom-subject-group').style.display = 'block';
+    } else {
+      document.getElementById('fav-f-subject').value = 'なし';
+    }
+    const times = Array.isArray(fav.notifTimes) && fav.notifTimes.length ? fav.notifTimes : ['07:00'];
+    buildNotifTimesList(times, 'fav-f-notif-time-group');
+    updateNotifTimeVisibility('fav-f-notif-time-group');
+    favFmt = { bold:!!(fav.format&&fav.format.bold), underline:!!(fav.format&&fav.format.underline),
+      'double-underline':!!(fav.format&&fav.format['double-underline']),
+      fg:(fav.format&&fav.format.fg)||null, bg:(fav.format&&fav.format.bg)||null };
+    updateFavFmtUI();
+    // アクション
+    document.getElementById('fav-modal-title-text').textContent = favId === '__new__' ? '⭐ お気に入りを追加' : '⭐ お気に入りを編集';
+    const actions = document.getElementById('fav-modal-actions');
+    actions.innerHTML = `
+      <button class="btn-primary" id="fav-save-btn">保存する</button>
+      ${favId !== '__new__' ? '<button class="btn-danger" id="fav-delete-btn">削除</button>' : ''}
+      <button class="btn-secondary" id="fav-back-btn">戻る</button>`;
+    document.getElementById('fav-save-btn').addEventListener('click', saveFav);
+    document.getElementById('fav-back-btn').addEventListener('click', () => openFavModal());
+    if (document.getElementById('fav-delete-btn')) {
+      document.getElementById('fav-delete-btn').addEventListener('click', () => {
+        if (!confirm('このお気に入りを削除しますか？')) return;
+        favorites = favorites.filter(f => f.id !== editingFavId);
+        saveFavorites(); openFavModal(); showToast('削除しました');
+      });
+    }
+    document.getElementById('fav-f-remind').addEventListener('change', () => updateNotifTimeVisibility('fav-f-notif-time-group'));
+    document.getElementById('fav-f-title').addEventListener('input', updateFavPreview);
+  }
+  document.getElementById('fav-modal-overlay').classList.add('open');
+}
+
+function renderFavList() {
+  const list = document.getElementById('fav-list');
+  list.innerHTML = '';
+  if (!favorites.length) {
+    list.innerHTML = '<div class="fav-empty">お気に入りはまだありません</div>';
+    return;
+  }
+  favorites.forEach(fav => {
+    const item = document.createElement('div'); item.className = 'fav-item';
+    const subPart = (fav.subject && fav.subject !== 'なし') ? `<span style="opacity:.7">${esc(fav.subject)}　</span>` : '';
+    const remind  = FAV_REMIND_LABELS[fav.remind] || 'なし';
+    item.innerHTML = `
+      <div class="fav-item-label">
+        <div class="fav-item-name">${subPart}${esc(fav.title||'（タイトルなし）')}</div>
+        <div class="fav-item-sub">リマインド：${remind}</div>
+      </div>
+      <button class="fav-item-edit">編集</button>
+      <button class="fav-item-delete">削除</button>`;
+    item.querySelector('.fav-item-edit').addEventListener('click', () => openFavModal(fav.id));
+    item.querySelector('.fav-item-delete').addEventListener('click', () => {
+      if (!confirm('削除しますか？')) return;
+      favorites = favorites.filter(f => f.id !== fav.id);
+      saveFavorites(); renderFavList(); showToast('削除しました');
+      populateFavDropdown();
+    });
+    list.appendChild(item);
+  });
+}
+
+function saveFav() {
+  const title  = document.getElementById('fav-f-title').value.trim();
+  const remind = document.getElementById('fav-f-remind').value;
+  const subjEl = document.getElementById('fav-f-subject').value;
+  const subject = subjEl === 'カスタム'
+    ? (document.getElementById('fav-f-custom-subject').value.trim() || 'カスタム')
+    : subjEl;
+  const notifTimes = remind === '0' ? [] : getNotifTimesFromGroup('fav-f-notif-time-group');
+  const format = { bold:favFmt.bold, underline:favFmt.underline, 'double-underline':favFmt['double-underline'], fg:favFmt.fg, bg:favFmt.bg };
+
+  // 1項目でも内容があれば保存可
+  if (!title && subject === 'なし' && !remind && !notifTimes.length) {
+    showToast('内容を1つ以上入力してください'); return;
+  }
+
+  if (editingFavId && editingFavId !== '__new__') {
+    const i = favorites.findIndex(f => f.id === editingFavId);
+    if (i >= 0) favorites[i] = { ...favorites[i], title, remind, subject, notifTimes, format };
+  } else {
+    favorites.push({ id: genId(), title, remind, subject, notifTimes, format });
+  }
+  saveFavorites();
+  populateFavDropdown();
+  openFavModal();
+  showToast('お気に入りを保存しました ✓');
+}
+
+document.getElementById('fav-new-btn').addEventListener('click', () => openFavModal('__new__'));
+document.getElementById('fav-modal-close').addEventListener('click', () => {
+  document.getElementById('fav-modal-overlay').classList.remove('open');
+});
+document.getElementById('fav-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
+
+// お気に入りモーダルの書式UI
+window.toggleFavFmt = function(key) {
+  if (key === 'underline' && !favFmt[key]) favFmt['double-underline'] = false;
+  if (key === 'double-underline' && !favFmt[key]) favFmt['underline'] = false;
+  favFmt[key] = !favFmt[key]; updateFavFmtUI();
+};
+window.handleFavSubjectChange = function(val) {
+  document.getElementById('fav-custom-subject-group').style.display = (val === 'カスタム') ? 'block' : 'none';
+  const subjName = val === 'カスタム' ? (document.getElementById('fav-f-custom-subject').value.trim() || 'カスタム') : val;
+  const c = getColor(subjName);
+  favFmt.fg = c.fg === DEFAULT_COLOR.fg ? null : c.fg;
+  favFmt.bg = c.bg === DEFAULT_COLOR.bg ? null : c.bg;
+  updateFavFmtUI();
+};
+function updateFavFmtUI() {
+  ['bold','underline','double-underline'].forEach(k => {
+    const btn = document.getElementById('fav-fmt-' + k);
+    if (btn) btn.classList.toggle('active', !!favFmt[k]);
+  });
+  buildColorPicker('fav-color-fg-row', FG_PALETTE, favFmt.fg, color => { favFmt.fg = color; updateFavFmtUI(); });
+  buildColorPicker('fav-color-bg-row', BG_PALETTE, favFmt.bg, color => { favFmt.bg = color; updateFavFmtUI(); });
+  const fgIn = document.getElementById('fav-color-fg-custom');
+  const bgIn = document.getElementById('fav-color-bg-custom');
+  if (fgIn && !fgIn._bound) { fgIn._bound = true; fgIn.addEventListener('input', () => { favFmt.fg = fgIn.value; updateFavFmtUI(); }); }
+  if (bgIn && !bgIn._bound) { bgIn._bound = true; bgIn.addEventListener('input', () => { favFmt.bg = bgIn.value; updateFavFmtUI(); }); }
+  updateFavPreview();
+}
+function updateFavPreview() {
+  const titleVal = document.getElementById('fav-f-title')?.value || 'テキスト';
+  const prev = document.getElementById('fav-format-preview'); if (!prev) return;
+  let td = ''; if (favFmt.underline) td='underline'; if (favFmt['double-underline']) td='underline double';
+  prev.style.fontWeight = favFmt.bold ? '700' : '400';
+  prev.style.textDecoration = td;
+  prev.style.color = favFmt.fg || '';
+  prev.style.backgroundColor = favFmt.bg || '';
+  prev.textContent = titleVal;
+}
+
 // ── EVENTS ──
 document.getElementById('modal-overlay').addEventListener('click', function(e) {
   if (e.target !== this) return;
   const title = document.getElementById('f-title').value.trim();
-  if (!title) { closeModal(); return; } // タイトルなし → 破棄
-  saveTask(); // タイトルあり → 保存
+  if (!title) { closeModal(); return; }
+  saveTask();
 });
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('sync-status').addEventListener('click', showSetup);
@@ -1138,27 +1407,23 @@ function endDrag(x, y) {
   const newDate = col ? getDateFromColBody(col) : null;
 
   if (newDate && newDate !== dragTask.date) {
-    // 別の列（日付変更）
+    // 別列へ移動（日付変更）
     const i = tasks.findIndex(t => t.id === dragTask.id);
     if (i >= 0) {
       tasks[i].date = newDate;
-      delete tasks[i].colOrder; // 移動先ではデフォルト順に
+      delete tasks[i].colOrder;
       schedulePush();
       showToast(`${newDate} に移動しました`);
     }
   } else if (newDate && newDate === dragTask.date && col) {
-    // 同じ列（縦並び替え）
+    // 同列内で縦並び替え
     const taskEls  = Array.from(col.querySelectorAll('.task-item'));
     const otherEls = taskEls.filter(el => el !== dragEl);
-
-    // ドロップ位置から挿入インデックスを決定
-    let insertIdx = otherEls.length;
+    let insertIdx  = otherEls.length;
     for (let i = 0; i < otherEls.length; i++) {
       const rect = otherEls[i].getBoundingClientRect();
       if (y < rect.top + rect.height / 2) { insertIdx = i; break; }
     }
-
-    // 新しい順序でcolOrderを割り当て
     const newOrder = otherEls.map(el => el.dataset.taskId);
     newOrder.splice(insertIdx, 0, dragTask.id);
     newOrder.forEach((id, idx) => {
@@ -1168,7 +1433,6 @@ function endDrag(x, y) {
     schedulePush();
   }
 
-  // クリーンアップ
   document.querySelectorAll('.col-body').forEach(c => c.classList.remove('drag-over'));
   document.body.classList.remove('dragging-active');
   if (dragClone) { dragClone.remove(); dragClone = null; }
