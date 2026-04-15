@@ -542,6 +542,75 @@ header {
   border: none; border-top: 1px solid var(--border); margin: 0;
 }
 
+/* ── テキスト選択禁止 ── */
+#app, .task-item, .col-body, .date-col-header, header {
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* モーダル内の入力欄は選択可能に戻す */
+.modal input, .modal select, .modal textarea,
+#fav-modal-overlay input, #fav-modal-overlay select { -webkit-user-select: auto; user-select: auto; }
+
+/* ── タイトル横お気に入りドロップダウン ── */
+.title-fav-row { display: flex; gap: 8px; align-items: center; }
+.title-fav-row .form-input { flex: 1; }
+.fav-select {
+  flex-shrink: 0; width: auto; max-width: 130px;
+  font-size: 13px; padding: 10px 8px;
+}
+
+/* ── 複数通知時刻リスト ── */
+.notif-times-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.notif-time-row {
+  display: grid;
+  grid-template-columns: 1fr 44px;
+  gap: 8px; align-items: center;
+}
+.notif-time-row .time-select-row { display: flex; align-items: center; gap: 4px; }
+.notif-time-row .time-select-row .form-select { flex: 1; }
+.notif-time-remove-btn {
+  background: #fff0f3; color: var(--accent2); border: 1.5px solid #ffc8d6;
+  border-radius: 10px; font-size: 16px; font-weight: 700;
+  font-family: 'Noto Sans JP', sans-serif;
+  width: 44px; height: 44px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.12s; flex-shrink: 0;
+}
+.notif-time-remove-btn:hover { background: #ffe0e8; }
+.notif-time-add-btn {
+  background: var(--accent-light); color: var(--accent);
+  border: 1.5px dashed #b8caff; border-radius: 10px;
+  font-size: 14px; font-weight: 700; font-family: 'Noto Sans JP', sans-serif;
+  padding: 10px 14px; cursor: pointer; width: 100%; transition: background 0.12s;
+}
+.notif-time-add-btn:hover { background: #d8e4ff; }
+
+/* ── お気に入りリスト ── */
+.fav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.fav-item-label { flex: 1; min-width: 0; }
+.fav-item-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.fav-item-sub  { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.fav-item-edit {
+  background: var(--accent-light); color: var(--accent); border: 1.5px solid #b8caff;
+  border-radius: 8px; font-size: 13px; font-weight: 700;
+  font-family: 'Noto Sans JP', sans-serif; padding: 6px 12px;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: background 0.12s;
+}
+.fav-item-edit:hover { background: #d8e4ff; }
+.fav-item-delete {
+  background: #fff0f3; color: var(--accent2); border: 1.5px solid #ffc8d6;
+  border-radius: 8px; font-size: 13px; font-weight: 700;
+  font-family: 'Noto Sans JP', sans-serif; padding: 6px 12px;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: background 0.12s;
+}
+.fav-item-delete:hover { background: #ffe0e8; }
+.fav-empty { color: var(--text3); font-size: 14px; text-align: center; padding: 20px 0; }
+
 /* ── ドラッグ＆ドロップ ── */
 .col-body.drag-over {
   background: var(--accent-light) !important;
