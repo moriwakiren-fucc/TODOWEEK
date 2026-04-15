@@ -32,6 +32,8 @@
       <div id="settings-menu">
         <button class="settings-item" id="settings-notif">🔔 通知設定</button>
         <hr class="settings-divider">
+        <button class="settings-item" id="settings-fav">⭐ お気に入り設定</button>
+        <hr class="settings-divider">
         <button class="settings-item" id="settings-cache">🔄 キャッシュをクリアして再読み込み</button>
       </div>
     </div>
@@ -72,7 +74,12 @@
 
     <div class="form-group">
       <label class="form-label">タイトル</label>
-      <input class="form-input" id="f-title" type="text" placeholder="例: 数学の宿題提出">
+      <div class="title-fav-row">
+        <input class="form-input" id="f-title" type="text" placeholder="例: 数学の宿題提出">
+        <select class="form-select fav-select" id="f-fav-apply" title="お気に入りから入力">
+          <option value="">⭐ お気に入り</option>
+        </select>
+      </div>
     </div>
 
     <div class="form-group" id="f-date-group" style="display:none;">
@@ -84,7 +91,7 @@
       <label class="form-label">リマインド</label>
       <select class="form-select" id="f-remind">
         <option value="0">なし</option>
-        <option value="today">今日</option>
+        <option value="today">当日</option>
         <option value="1">1日前</option>
         <option value="2" selected>2日前</option>
         <option value="3">3日前</option>
@@ -96,14 +103,7 @@
       </select>
     </div>
 
-    <div class="form-group" id="f-notif-time-group">
-      <label class="form-label">通知時刻（リマインド日）</label>
-      <div class="time-select-row">
-        <select class="form-select time-select-h" id="f-notif-hour"></select>
-        <span class="time-select-sep">:</span>
-        <select class="form-select time-select-m" id="f-notif-min"></select>
-      </div>
-    </div>
+    <div class="form-group" id="f-notif-time-group"></div>
 
     <div class="form-group">
       <label class="form-label">教科</label>
@@ -226,6 +226,95 @@
   </div>
 </div>
 
+
+<!-- ── お気に入りモーダル ── -->
+<div class="modal-overlay" id="fav-modal-overlay">
+  <div class="modal">
+    <div class="modal-title">
+      <span id="fav-modal-title-text">⭐ お気に入り設定</span>
+      <button class="modal-close" id="fav-modal-close">✕</button>
+    </div>
+
+    <!-- 登録済みリスト -->
+    <div id="fav-list-section">
+      <div id="fav-list"></div>
+      <button class="btn-primary" id="fav-new-btn" style="margin-top:10px;">＋ 新しいお気に入りを追加</button>
+    </div>
+
+    <!-- 編集フォーム -->
+    <div id="fav-edit-section" style="display:none;">
+      <div class="form-group">
+        <label class="form-label">タイトル</label>
+        <input class="form-input" id="fav-f-title" type="text" placeholder="例: 数学の宿題">
+      </div>
+      <div class="form-group">
+        <label class="form-label">リマインド（期限からの相対日）</label>
+        <select class="form-select" id="fav-f-remind">
+          <option value="0">なし</option>
+          <option value="same">その日</option>
+          <option value="next1">次の日</option>
+          <option value="next2">2日後</option>
+          <option value="nextMon">次の月曜日</option>
+          <option value="nextTue">次の火曜日</option>
+          <option value="nextWed">次の水曜日</option>
+          <option value="nextThu">次の木曜日</option>
+          <option value="nextFri">次の金曜日</option>
+          <option value="nextSat">次の土曜日</option>
+          <option value="nextSun">次の日曜日</option>
+        </select>
+      </div>
+      <div class="form-group" id="fav-f-notif-time-group"></div>
+      <div class="form-group">
+        <label class="form-label">教科</label>
+        <select class="form-select" id="fav-f-subject" onchange="handleFavSubjectChange(this.value)">
+          <option value="なし" selected>なし</option>
+          <option value="国語">国語</option>
+          <option value="数学">数学</option>
+          <option value="英語">英語</option>
+          <option value="化学">化学</option>
+          <option value="物理">物理</option>
+          <option value="生物">生物</option>
+          <option value="地理">地理</option>
+          <option value="日本史">日本史</option>
+          <option value="世界史">世界史</option>
+          <option value="情報">情報</option>
+          <option value="カスタム">カスタム（自由入力）</option>
+        </select>
+      </div>
+      <div class="form-group" id="fav-custom-subject-group" style="display:none;">
+        <label class="form-label">カスタム教科名</label>
+        <input class="form-input" id="fav-f-custom-subject" type="text" placeholder="例: 体育、音楽…">
+      </div>
+      <div class="form-group">
+        <label class="form-label">書式</label>
+        <div class="format-section">
+          <div class="format-row">
+            <button type="button" class="fmt-btn" id="fav-fmt-bold" onclick="toggleFavFmt('bold')" title="太字"><strong>B</strong></button>
+            <button type="button" class="fmt-btn" id="fav-fmt-underline" onclick="toggleFavFmt('underline')" title="下線"><span style="text-decoration:underline;">U</span></button>
+            <button type="button" class="fmt-btn" id="fav-fmt-double-underline" onclick="toggleFavFmt('double-underline')" title="二重下線"><span style="text-decoration:underline double;">U</span></button>
+          </div>
+          <div class="format-label-small">文字色</div>
+          <div class="color-picker-row" id="fav-color-fg-row"></div>
+          <div class="color-custom-row">
+            <label class="format-label-small" for="fav-color-fg-custom">カスタム文字色</label>
+            <input type="color" id="fav-color-fg-custom" class="color-custom-input" value="#1a1e2e">
+          </div>
+          <div class="format-label-small">背景色</div>
+          <div class="color-picker-row" id="fav-color-bg-row"></div>
+          <div class="color-custom-row">
+            <label class="format-label-small" for="fav-color-bg-custom">カスタム背景色</label>
+            <input type="color" id="fav-color-bg-custom" class="color-custom-input" value="#ffffff">
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">プレビュー</label>
+        <div id="fav-format-preview" class="format-preview">テキスト</div>
+      </div>
+      <div class="modal-actions" id="fav-modal-actions"></div>
+    </div>
+  </div>
+</div>
 
 <!-- ── TOAST ── -->
 <div id="toast"></div>
