@@ -547,7 +547,7 @@ window.addEventListener('resize', () => {
 
 function makeTaskEl(task, isOverdue = false) {
   const div = document.createElement('div');
-  div.className = 'task-item' + (task.done ? ' done' : '');
+  div.className = 'task-item' + (task.done ? ' done' : '') + (task.isEvent ? ' is-event' : '');
   div.dataset.taskId = task.id;
   const c = getColor(task.subject);
   const effectiveFg = (task.format && task.format.fg) ? task.format.fg : c.fg;
@@ -557,7 +557,9 @@ function makeTaskEl(task, isOverdue = false) {
   const cb = document.createElement('div'); cb.className = 'task-cb';
   cb.style.borderColor = effectiveFg;
   cb.addEventListener('click', e => {
-    e.stopPropagation(); task.done = !task.done; schedulePush(); render();
+    e.stopPropagation();
+    if (task.isEvent) return; // 予定タスクは完了不可
+    task.done = !task.done; schedulePush(); render();
   });
 
   const lbl = document.createElement('div'); lbl.className = 'task-label';
@@ -758,7 +760,7 @@ function updateNotifTimeVisibility(gid) {
 }
 function renderOverdue() {
   const todayStr = getTodayStr();
-  const od = tasks.filter(t => !t.done && t.date < todayStr);
+  const od = tasks.filter(t => !t.done && !t.isEvent && t.date < todayStr);
   const sec = document.getElementById('overdue-section');
   if (!od.length) { sec.classList.add('hidden'); return; }
   sec.classList.remove('hidden');
@@ -889,9 +891,10 @@ function openModal(id, dateStr) {
 
   if (isEdit) {
     const t = tasks.find(t => t.id === id);
-    document.getElementById('f-title').value  = t.title  || '';
-    document.getElementById('f-date').value   = t.date   || '';
-    document.getElementById('f-remind').value = t.remind || '0';
+    document.getElementById('f-title').value    = t.title  || '';
+    document.getElementById('f-date').value     = t.date   || '';
+    document.getElementById('f-remind').value   = t.remind || '0';
+    document.getElementById('f-is-event').checked = !!t.isEvent;
     const existingTimes = Array.isArray(t.notifTimes) && t.notifTimes.length
       ? t.notifTimes
       : (t.notifTime && t.notifTime !== 'none' ? [t.notifTime] : ['07:00']);
@@ -917,6 +920,7 @@ function openModal(id, dateStr) {
     document.getElementById('f-remind').value  = '2';
     document.getElementById('f-subject').value = 'なし';
     document.getElementById('f-custom-subject').value = '';
+    document.getElementById('f-is-event').checked = false;
     buildNotifTimesList(['07:00'], 'f-notif-time-group');
     initFmtFromSubject('なし');
     document.getElementById('modal-actions').innerHTML = `
@@ -950,19 +954,24 @@ function saveTask() {
   const remind     = document.getElementById('f-remind').value;
   const notifTimes = remind === '0' ? [] : getNotifTimesFromGroup('f-notif-time-group');
   const subject    = getSubjectValue();
+  const isEvent    = document.getElementById('f-is-event').checked;
   const format     = { bold:fmt.bold, underline:fmt.underline, 'double-underline':fmt['double-underline'], fg:fmt.fg, bg:fmt.bg };
   if (editingId) {
     const i = tasks.findIndex(t => t.id === editingId);
     if (i >= 0) {
       const prev    = tasks[i];
-      const updated = { ...prev, title, date:finalDate, remind, notifTimes, subject, format };
+      const updated = { ...prev, title, date:finalDate, remind, notifTimes, subject, isEvent, format };
+      if (!isEvent) { if (updated.done === undefined) updated.done = false; }
+      else          { delete updated.done; }
       if (prev.date !== finalDate || prev.remind !== remind) delete updated.colOrder;
       delete updated.notifTime;
       tasks[i] = updated;
     }
     showToast('更新しました ✓');
   } else {
-    tasks.push({ id:genId(), title, date:finalDate, remind, notifTimes, subject, done:false, format });
+    const newTask = { id:genId(), title, date:finalDate, remind, notifTimes, subject, isEvent, format };
+    if (!isEvent) newTask.done = false;
+    tasks.push(newTask);
     showToast('追加しました ✓');
   }
   schedulePush(); closeModal(); render();
