@@ -542,6 +542,44 @@ header {
   border: none; border-top: 1px solid var(--border); margin: 0;
 }
 
+/* ── 予定にするトグル ── */
+.event-toggle-label {
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; padding: 4px 0;
+  -webkit-user-select: none; user-select: auto;
+}
+.event-toggle-label input[type="checkbox"] {
+  width: 20px; height: 20px; accent-color: var(--accent);
+  cursor: pointer; flex-shrink: 0;
+}
+.event-toggle-text {
+  font-size: 14px; color: var(--text2); font-weight: 500;
+}
+
+/* 予定タスク（チェックボックスなし） */
+.task-item--event .task-cb { display: none; }
+.task-item--event {
+  border-left: 4px solid var(--accent);
+}
+.task-item--event.task-item::after { content: ''; display: table; clear: both; }
+
+/* ── 予定チェックボックス ── */
+.event-checkbox-label {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 14px; color: var(--text); cursor: pointer;
+  padding: 4px 0; -webkit-user-select: none; user-select: none;
+}
+.event-checkbox-label input[type="checkbox"] {
+  width: 20px; height: 20px; border-radius: 5px; accent-color: var(--accent);
+  cursor: pointer; flex-shrink: 0; -webkit-user-select: auto; user-select: auto;
+}
+/* 予定タスク：左端にアクセントバーを表示し、チェックボックスなしを示す */
+.task-item.is-event {
+  border-left-width: 4px;
+  padding-left: 9px;
+}
+.task-item.is-event .task-cb { display: none; }
+
 /* ── テキスト選択禁止 ── */
 #app, .task-item, .col-body, .date-col-header, header {
   -webkit-user-select: none;
