@@ -1232,9 +1232,8 @@ function openFavModal(favId) {
     }
     const favNotifs = Array.isArray(fav.notifications) && fav.notifications.length
       ? fav.notifications : getNotifsArray(fav);
-    const initNotifs = favNotifs.length ? favNotifs : [{ remind: 'today', time: '07:00' }];
+    const initNotifs = favNotifs.length ? favNotifs : [{ remind: 'none', time: '07:00' }];
     buildNotifTimesList(initNotifs, 'fav-f-notif-time-group');
-    updateNotifTimeVisibility('fav-f-notif-time-group');
     favFmt = { bold:!!(fav.format&&fav.format.bold), underline:!!(fav.format&&fav.format.underline),
       'double-underline':!!(fav.format&&fav.format['double-underline']),
       fg:(fav.format&&fav.format.fg)||null, bg:(fav.format&&fav.format.bg)||null };
@@ -1255,7 +1254,7 @@ function openFavModal(favId) {
         saveFavorites(); openFavModal(); showToast('削除しました');
       });
     }
-    document.getElementById('fav-f-remind').addEventListener('change', () => updateNotifTimeVisibility('fav-f-notif-time-group'));
+    // fav-f-remind は非表示のためリスナー不要
     document.getElementById('fav-f-title').addEventListener('input', updateFavPreview);
   }
   document.getElementById('fav-modal-overlay').classList.add('open');
@@ -1291,19 +1290,22 @@ function renderFavList() {
 }
 
 function saveFav() {
-  const title    = document.getElementById('fav-f-title').value.trim();
-  const remind   = document.getElementById('fav-f-remind').value;
-  const isEvent  = document.getElementById('fav-f-is-event').checked;
-  const subjEl   = document.getElementById('fav-f-subject').value;
+  const title   = document.getElementById('fav-f-title').value.trim();
+  const isEvent = document.getElementById('fav-f-is-event').checked;
+  const subjEl  = document.getElementById('fav-f-subject').value;
   const subject = subjEl === 'カスタム'
     ? (document.getElementById('fav-f-custom-subject').value.trim() || 'カスタム')
     : subjEl;
-  const notifTimes    = remind === '0' ? [] : getNotifTimesFromGroup('fav-f-notif-time-group');
-  const notifications = notifTimes; // {remind,time}[]
+  const notifications = getNotifTimesFromGroup('fav-f-notif-time-group'); // noneは除外済み
+  // fav-f-remindは非表示のため通知から自動算出
+  const remind = notifications.length
+    ? (notifications.some(n => n.remind === 'today') ? 'today'
+      : String(Math.max(...notifications.map(n => parseInt(n.remind) || 0))))
+    : '0';
   const format = { bold:favFmt.bold, underline:favFmt.underline, 'double-underline':favFmt['double-underline'], fg:favFmt.fg, bg:favFmt.bg };
 
   // 1項目でも内容があれば保存可
-  if (!title && subject === 'なし' && !remind && !notifications.length) {
+  if (!title && subject === 'なし' && !notifications.length) {
     showToast('内容を1つ以上入力してください'); return;
   }
 
