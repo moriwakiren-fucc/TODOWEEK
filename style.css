@@ -597,12 +597,12 @@ header {
   font-size: 13px; padding: 10px 8px;
 }
 
-/* ── 複数通知時刻リスト ── */
-.notif-times-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+/* ── 複数通知リスト ── */
+.notif-times-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
 .notif-time-row {
   display: grid;
-  grid-template-columns: 1fr 44px;
-  gap: 8px; align-items: center;
+  grid-template-columns: 1fr 1fr 44px;
+  gap: 6px; align-items: center;
 }
 .notif-time-row .time-select-row { display: flex; align-items: center; gap: 4px; }
 .notif-time-row .time-select-row .form-select { flex: 1; }
