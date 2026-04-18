@@ -738,13 +738,6 @@ function getNotifTimesFromGroup(gid) {
   });
 }
 
-function getNotifTimeValue() {
-  const remindVal = document.getElementById('f-remind').value;
-  if (remindVal === '0') return 'none';
-  const h = document.getElementById('f-notif-hour').value;
-  const m = document.getElementById('f-notif-min').value;
-  return `${h}:${m}`;
-}
 
 function updateNotifTimeVisibility(gid) {
   const remindSel = document.getElementById(gid === 'fav-f-notif-time-group' ? 'fav-f-remind' : 'f-remind');
@@ -1116,6 +1109,8 @@ function populateFavDropdown() {
 
 function applyFavToModal(fav) {
   if (fav.title) document.getElementById('f-title').value = fav.title;
+  // 予定フラグ
+  document.getElementById('f-is-event').checked = !!fav.isEvent;
   // リマインド
   if (fav.remind) {
     document.getElementById('f-remind').value = fav.remind;
@@ -1161,8 +1156,9 @@ function openFavModal(favId) {
     // 編集フォーム表示
     listSec.style.display = 'none'; editSec.style.display = '';
     const fav = favorites.find(f => f.id === favId) || {};
-    document.getElementById('fav-f-title').value = fav.title || '';
-    document.getElementById('fav-f-remind').value = fav.remind || '0';
+    document.getElementById('fav-f-title').value   = fav.title || '';
+    document.getElementById('fav-f-remind').value  = fav.remind || '0';
+    document.getElementById('fav-f-is-event').checked = !!fav.isEvent;
     const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
     if (fav.subject && presets.includes(fav.subject)) {
       document.getElementById('fav-f-subject').value = fav.subject;
@@ -1233,9 +1229,10 @@ function renderFavList() {
 }
 
 function saveFav() {
-  const title  = document.getElementById('fav-f-title').value.trim();
-  const remind = document.getElementById('fav-f-remind').value;
-  const subjEl = document.getElementById('fav-f-subject').value;
+  const title    = document.getElementById('fav-f-title').value.trim();
+  const remind   = document.getElementById('fav-f-remind').value;
+  const isEvent  = document.getElementById('fav-f-is-event').checked;
+  const subjEl   = document.getElementById('fav-f-subject').value;
   const subject = subjEl === 'カスタム'
     ? (document.getElementById('fav-f-custom-subject').value.trim() || 'カスタム')
     : subjEl;
@@ -1249,9 +1246,9 @@ function saveFav() {
 
   if (editingFavId && editingFavId !== '__new__') {
     const i = favorites.findIndex(f => f.id === editingFavId);
-    if (i >= 0) favorites[i] = { ...favorites[i], title, remind, subject, notifTimes, format };
+    if (i >= 0) favorites[i] = { ...favorites[i], title, remind, isEvent, subject, notifTimes, format };
   } else {
-    favorites.push({ id: genId(), title, remind, subject, notifTimes, format });
+    favorites.push({ id: genId(), title, remind, isEvent, subject, notifTimes, format });
   }
   saveFavorites();
   populateFavDropdown();
