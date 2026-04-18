@@ -670,6 +670,7 @@ function makeTaskEl(task, isOverdue = false) {
 
 // ── 複数通知UI（リマインド日＋時刻） ──
 const NOTIF_REMIND_OPTIONS = [
+  { value: 'none', label: 'なし（通知しない）' },
   { value: 'today', label: '当日' },
   { value: '1',  label: '1日前' },
   { value: '2',  label: '2日前' },
@@ -696,24 +697,26 @@ function buildNotifTimesList(selectedNotifs, groupId) {
   list.id = listId; list.className = 'notif-times-list';
   group.appendChild(list);
 
-  // 初期値：{remind, time} オブジェクト配列を期待、文字列の場合は変換
+  // 初期値：{remind, time}オブジェクト配列を期待、文字列の場合は変換
+  // 通知なし（空配列）の場合は「なし」1行を表示
   const notifs = (selectedNotifs && selectedNotifs.length)
     ? selectedNotifs.map(n => typeof n === 'string' ? { remind: 'today', time: n } : n)
-    : [{ remind: 'today', time: '07:00' }];
-  notifs.forEach(n => list.appendChild(makeNotifTimeRow(n, listId)));
+    : [{ remind: 'none', time: '07:00' }];
+  notifs.forEach((n, i) => list.appendChild(makeNotifTimeRow(n, listId, i === 0)));
   updateRemoveButtons(listId);
 
   const addBtn = document.createElement('button');
   addBtn.type = 'button'; addBtn.className = 'notif-time-add-btn';
   addBtn.textContent = '＋ 通知を追加';
   addBtn.addEventListener('click', () => {
-    document.getElementById(listId).appendChild(makeNotifTimeRow({ remind: 'today', time: '07:00' }, listId));
+    const rows = document.querySelectorAll(`#${listId} .notif-time-row`);
+    document.getElementById(listId).appendChild(makeNotifTimeRow({ remind: 'today', time: '07:00' }, listId, false));
     updateRemoveButtons(listId);
   });
   group.appendChild(addBtn);
 }
 
-function makeNotifTimeRow(notif, listId) {
+function makeNotifTimeRow(notif, listId, isFirst) {
   const safeRemind = notif.remind || 'today';
   const safeTime   = (notif.time && notif.time !== 'none') ? notif.time : '07:00';
   const row = document.createElement('div'); row.className = 'notif-time-row';
@@ -721,6 +724,8 @@ function makeNotifTimeRow(notif, listId) {
   // リマインド日セレクト
   const selRemind = document.createElement('select'); selRemind.className = 'form-select notif-remind-sel';
   NOTIF_REMIND_OPTIONS.forEach(opt => {
+    // 1行目以外は「なし」を除外
+    if (!isFirst && opt.value === 'none') return;
     const o = document.createElement('option'); o.value = opt.value; o.textContent = opt.label;
     if (opt.value === safeRemind) o.selected = true;
     selRemind.appendChild(o);
@@ -745,6 +750,15 @@ function makeNotifTimeRow(notif, listId) {
   }
   wrap.appendChild(selH); wrap.appendChild(sep); wrap.appendChild(selM);
 
+  // なし選択時は時刻を薄く
+  const updateTimeDisabled = () => {
+    const isNone = selRemind.value === 'none';
+    selH.disabled = isNone; selM.disabled = isNone;
+    wrap.style.opacity = isNone ? '0.35' : '1';
+  };
+  selRemind.addEventListener('change', updateTimeDisabled);
+  updateTimeDisabled();
+
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button'; removeBtn.className = 'notif-time-remove-btn';
   removeBtn.textContent = '✕';
@@ -761,9 +775,9 @@ function updateRemoveButtons(listId) {
   const list = document.getElementById(listId);
   if (!list) return;
   const rows = list.querySelectorAll('.notif-time-row');
-  rows.forEach(row => {
+  rows.forEach((row, i) => {
     const btn = row.querySelector('.notif-time-remove-btn');
-    if (btn) btn.style.visibility = rows.length > 1 ? 'visible' : 'hidden';
+    if (btn) btn.style.visibility = (i === 0 || rows.length <= 1) ? 'hidden' : 'visible';
   });
 }
 
@@ -771,10 +785,12 @@ function updateRemoveButtons(listId) {
 function getNotifTimesFromGroup(gid) {
   const listId = (gid || 'f-notif-time-group') + '-list';
   const rows   = document.querySelectorAll(`#${listId} .notif-time-row`);
-  return Array.from(rows).map(row => ({
-    remind: row.querySelector('.notif-remind-sel').value,
-    time:   row.querySelector('.time-select-h').value + ':' + row.querySelector('.time-select-m').value,
-  }));
+  return Array.from(rows)
+    .map(row => ({
+      remind: row.querySelector('.notif-remind-sel').value,
+      time:   row.querySelector('.time-select-h').value + ':' + row.querySelector('.time-select-m').value,
+    }))
+    .filter(n => n.remind !== 'none'); // なし選択は除外
 }
 
 
@@ -963,8 +979,11 @@ function openModal(id, dateStr) {
   document.getElementById('modal-save').addEventListener('click', saveTask);
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
   document.getElementById('f-title').addEventListener('input', updatePreview);
-  document.getElementById('f-remind').addEventListener('change', () => updateNotifTimeVisibility('f-notif-time-group'));
-  updateNotifTimeVisibility('f-notif-time-group');
+  document.getElementById('f-remind').addEventListener('change', () => {});
+  // 通知UIは常に表示（リマインドプルダウンは非表示のため）
+  if (!document.getElementById('f-notif-time-group').querySelector('.notif-times-list')) {
+    buildNotifTimesList([], 'f-notif-time-group');
+  }
   document.getElementById('modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('f-title').focus(), 260);
   updateFmtUI();
@@ -983,10 +1002,14 @@ function saveTask() {
   if (!title) { showToast('タイトルを入力してください'); return; }
   const finalDate = editingId ? document.getElementById('f-date').value : currentDateStr;
   if (!finalDate) { showToast('日付が設定されていません'); return; }
-  const remind        = document.getElementById('f-remind').value;
   const isEvent       = document.getElementById('f-is-event').checked;
-  const notifications = remind === '0' ? [] : getNotifTimesFromGroup('f-notif-time-group');
-  const subject       = getSubjectValue();
+  const notifications = getNotifTimesFromGroup('f-notif-time-group');
+  // f-remindは非表示だが後方互換のため通知から自動算出
+  const remind = notifications.length
+    ? (notifications.some(n => n.remind === 'today') ? 'today'
+      : String(Math.max(...notifications.map(n => parseInt(n.remind) || 0))))
+    : '0';
+  const subject = getSubjectValue();
   const format        = { bold:fmt.bold, underline:fmt.underline, 'double-underline':fmt['double-underline'], fg:fmt.fg, bg:fmt.bg };
   if (editingId) {
     const i = tasks.findIndex(t => t.id === editingId);
@@ -1150,11 +1173,6 @@ function applyFavToModal(fav) {
   if (fav.title) document.getElementById('f-title').value = fav.title;
   // 予定フラグ
   document.getElementById('f-is-event').checked = !!fav.isEvent;
-  // リマインド
-  if (fav.remind) {
-    document.getElementById('f-remind').value = fav.remind;
-    updateNotifTimeVisibility('f-notif-time-group');
-  }
   // 教科
   const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
   if (fav.subject && presets.includes(fav.subject)) {
