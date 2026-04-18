@@ -601,7 +601,7 @@ header {
 .notif-times-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
 .notif-time-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 44px;
+  grid-template-columns: 0.75fr 1.25fr 44px;
   gap: 6px; align-items: center;
 }
 .notif-time-row .time-select-row { display: flex; align-items: center; gap: 4px; }
