@@ -71,16 +71,23 @@ function getFirstNotifTime(task) {
   return notifs.length ? notifs[0].time : '99:99';
 }
 
-// 列内ソート：colOrderがあれば優先、なければリマインド日時順
+// 列内ソート：完了済みは必ず最後、colOrderがあれば優先、なければリマインド日時順
 function sortTasksForDate(dateTasks) {
-  const withOrder    = dateTasks.filter(t => t.colOrder !== undefined).sort((a, b) => a.colOrder - b.colOrder);
-  const withoutOrder = dateTasks.filter(t => t.colOrder === undefined).sort((a, b) => {
-    const ra = getRemindDate(a), rb = getRemindDate(b);
-    if (ra !== rb) return ra < rb ? -1 : 1;
-    const ta = getFirstNotifTime(a), tb = getFirstNotifTime(b);
-    return ta < tb ? -1 : ta > tb ? 1 : 0;
-  });
-  return [...withOrder, ...withoutOrder];
+  const undone = dateTasks.filter(t => !t.done);
+  const done   = dateTasks.filter(t =>  t.done);
+
+  const sortGroup = arr => {
+    const withOrder    = arr.filter(t => t.colOrder !== undefined).sort((a, b) => a.colOrder - b.colOrder);
+    const withoutOrder = arr.filter(t => t.colOrder === undefined).sort((a, b) => {
+      const ra = getRemindDate(a), rb = getRemindDate(b);
+      if (ra !== rb) return ra < rb ? -1 : 1;
+      const ta = getFirstNotifTime(a), tb = getFirstNotifTime(b);
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
+    });
+    return [...withOrder, ...withoutOrder];
+  };
+
+  return [...sortGroup(undone), ...sortGroup(done)];
 }
 
 // お気に入りのリマインド値から表示文字列（通常と同じ値）
