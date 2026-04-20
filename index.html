@@ -1,1099 +1,354 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MathSolve — 数学ソルバー</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=Noto+Sans+JP:wght@300;400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
-<style>
-  :root {
-    --bg: #fafaf8;
-    --surface: #ffffff;
-    --border: #e8e6e0;
-    --border-light: #f0ede6;
-    --text: #1a1814;
-    --text-muted: #8a8070;
-    --accent: #2a2420;
-    --accent-soft: #f5f0e8;
-    --highlight: #c8a96e;
-    --highlight-light: #f9f3e8;
-    --error: #c0392b;
-    --success: #2d6a4f;
-    --kbd-bg: #f4f1ec;
-    --kbd-hover: #ede8df;
-    --kbd-border: #d8d0c4;
-    --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
-    --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,0.10);
-    --radius: 10px;
-    --radius-sm: 6px;
-    --font-display: 'DM Serif Display', serif;
-    --font-body: 'Noto Sans JP', sans-serif;
-    --font-mono: 'DM Mono', monospace;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: var(--font-body);
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    font-size: 15px;
-    line-height: 1.6;
-  }
-
-  /* HEADER */
-  header {
-    padding: 20px 24px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    background: var(--surface);
-    position: sticky;
-    top: 0;
-    z-index: 100;
-  }
-  .logo {
-    font-family: var(--font-display);
-    font-size: 22px;
-    letter-spacing: -0.5px;
-    color: var(--accent);
-  }
-  .logo span { color: var(--highlight); }
-  .tagline {
-    font-size: 12px;
-    color: var(--text-muted);
-    font-weight: 300;
-    letter-spacing: 0.5px;
-    margin-left: auto;
-  }
-
-  /* MAIN LAYOUT */
-  .container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 24px 16px 60px;
-  }
-
-  /* INPUT SECTION */
-  .input-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-sm);
-    overflow: hidden;
-    margin-bottom: 16px;
-  }
-  .tab-bar {
-    display: flex;
-    border-bottom: 1px solid var(--border);
-    background: var(--accent-soft);
-  }
-  .tab-btn {
-    flex: 1;
-    padding: 10px 16px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-family: var(--font-body);
-    font-size: 13px;
-    font-weight: 400;
-    color: var(--text-muted);
-    transition: all 0.2s;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-  }
-  .tab-btn.active {
-    color: var(--accent);
-    font-weight: 500;
-    background: var(--surface);
-    border-bottom-color: var(--highlight);
-  }
-  .tab-btn:hover:not(.active) { background: var(--kbd-hover); }
-
-  /* TEXT INPUT */
-  .text-input-area {
-    padding: 16px;
-  }
-  #text-input {
-    width: 100%;
-    min-height: 80px;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    font-family: var(--font-body);
-    font-size: 15px;
-    resize: vertical;
-    background: var(--bg);
-    color: var(--text);
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  #text-input:focus { border-color: var(--highlight); }
-  #text-input::placeholder { color: var(--text-muted); }
-
-  /* FORMULA INPUT */
-  .formula-input-area {
-    padding: 16px;
-    display: none;
-  }
-  .formula-display {
-    min-height: 56px;
-    padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--bg);
-    font-size: 16px;
-    cursor: text;
-    margin-bottom: 12px;
-    position: relative;
-    overflow-x: auto;
-    white-space: nowrap;
-  }
-  .formula-display .katex { font-size: 1.1em; }
-  .formula-cursor {
-    display: inline-block;
-    width: 1.5px;
-    height: 1.2em;
-    background: var(--accent);
-    animation: blink 1s step-end infinite;
-    vertical-align: middle;
-    margin-left: 1px;
-  }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-  .formula-raw {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--text-muted);
-    padding: 6px 10px;
-    background: var(--accent-soft);
-    border-radius: var(--radius-sm);
-    margin-bottom: 12px;
-    word-break: break-all;
-  }
-
-  /* MATH KEYBOARD */
-  .math-keyboard {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-  .kb-tabs {
-    display: flex;
-    background: var(--kbd-bg);
-    border-bottom: 1px solid var(--border);
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .kb-tabs::-webkit-scrollbar { display: none; }
-  .kb-tab {
-    padding: 7px 14px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 12px;
-    color: var(--text-muted);
-    white-space: nowrap;
-    transition: all 0.15s;
-    font-family: var(--font-body);
-  }
-  .kb-tab.active {
-    color: var(--accent);
-    font-weight: 500;
-    background: var(--surface);
-    border-bottom: 2px solid var(--highlight);
-  }
-  .kb-panel {
-    display: none;
-    padding: 10px;
-    background: var(--surface);
-  }
-  .kb-panel.active { display: grid; }
-  .kb-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-  .kb-btn {
-    padding: 7px 10px;
-    background: var(--kbd-bg);
-    border: 1px solid var(--kbd-border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 13px;
-    color: var(--text);
-    transition: all 0.15s;
-    font-family: var(--font-mono);
-    min-width: 44px;
-    text-align: center;
-    line-height: 1.3;
-    user-select: none;
-  }
-  .kb-btn:hover { background: var(--kbd-hover); border-color: var(--highlight); }
-  .kb-btn:active { transform: scale(0.95); }
-  .kb-btn .katex { font-size: 0.95em; }
-  .kb-btn-wide { min-width: 70px; }
-  .kb-btn-del {
-    background: #fef2f2;
-    border-color: #fcc;
-    color: #c00;
-  }
-  .kb-btn-del:hover { background: #fee2e2; }
-  .kb-btn-clear {
-    background: #fff8e1;
-    border-color: #f0c040;
-    color: #7a5c00;
-  }
-
-  /* IMAGE INPUT */
-  .image-input-area {
-    padding: 16px;
-    display: none;
-  }
-  .image-drop-zone {
-    border: 2px dashed var(--border);
-    border-radius: var(--radius-sm);
-    padding: 32px 16px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    color: var(--text-muted);
-  }
-  .image-drop-zone:hover, .image-drop-zone.dragover {
-    border-color: var(--highlight);
-    background: var(--highlight-light);
-  }
-  .image-drop-zone .icon { font-size: 28px; margin-bottom: 8px; }
-  .image-drop-zone p { font-size: 13px; }
-  #image-input { display: none; }
-  .image-preview {
-    display: none;
-    margin-top: 12px;
-    text-align: center;
-  }
-  .image-preview img {
-    max-width: 100%;
-    max-height: 200px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-  }
-  .image-remove-btn {
-    display: block;
-    margin: 8px auto 0;
-    padding: 4px 12px;
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    font-size: 12px;
-    cursor: pointer;
-    color: var(--text-muted);
-  }
-  .image-remove-btn:hover { color: var(--error); border-color: var(--error); }
-
-  /* ACTION BAR */
-  .action-bar {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-  .hint-text {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-right: auto;
-  }
-  .clear-all-btn {
-    padding: 8px 16px;
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    cursor: pointer;
-    font-size: 13px;
-    color: var(--text-muted);
-    font-family: var(--font-body);
-    transition: all 0.2s;
-  }
-  .clear-all-btn:hover { border-color: var(--text-muted); color: var(--text); }
-  .solve-btn {
-    padding: 10px 28px;
-    background: var(--accent);
-    color: white;
-    border: none;
-    border-radius: 24px;
-    cursor: pointer;
-    font-family: var(--font-body);
-    font-size: 14px;
-    font-weight: 500;
-    letter-spacing: 0.3px;
-    transition: all 0.2s;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  }
-  .solve-btn:hover { background: #3a3430; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-  .solve-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .solve-btn.loading { position: relative; color: transparent; }
-  .solve-btn.loading::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255,255,255,0.4);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    margin: auto;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* RESULT SECTION */
-  .result-section {
-    display: none;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-sm);
-    overflow: hidden;
-    margin-bottom: 16px;
-    animation: fadeIn 0.3s ease;
-  }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-  .result-header {
-    padding: 14px 20px;
-    background: var(--accent-soft);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .result-header h2 {
-    font-family: var(--font-display);
-    font-size: 16px;
-    font-weight: normal;
-    color: var(--accent);
-  }
-  .result-badge {
-    font-size: 11px;
-    padding: 2px 8px;
-    background: var(--highlight);
-    color: white;
-    border-radius: 10px;
-    font-weight: 500;
-  }
-  .result-body {
-    padding: 20px;
-    line-height: 1.8;
-  }
-  .result-body .katex-display { margin: 12px 0; overflow-x: auto; }
-  .result-body .katex { font-size: 1.05em; }
-  .step {
-    margin-bottom: 20px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--border-light);
-  }
-  .step:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-  .step-label {
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-    color: var(--highlight);
-    margin-bottom: 6px;
-    font-family: var(--font-mono);
-  }
-  .step-content { font-size: 14px; color: var(--text); }
-  .step-content p { margin-bottom: 8px; }
-  .step-content p:last-child { margin-bottom: 0; }
-  .answer-box {
-    background: var(--highlight-light);
-    border: 1.5px solid var(--highlight);
-    border-radius: var(--radius-sm);
-    padding: 14px 18px;
-    margin-top: 16px;
-  }
-  .answer-box .answer-label {
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-    color: var(--highlight);
-    margin-bottom: 6px;
-    font-family: var(--font-mono);
-  }
-  .error-box {
-    background: #fef2f2;
-    border: 1px solid #fcc;
-    border-radius: var(--radius-sm);
-    padding: 14px 18px;
-    color: var(--error);
-    font-size: 14px;
-  }
-
-  /* HISTORY */
-  .history-section {
-    display: none;
-  }
-  .history-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 0;
-    margin-bottom: 8px;
-  }
-  .history-header h3 {
-    font-family: var(--font-display);
-    font-size: 15px;
-    font-weight: normal;
-    color: var(--text-muted);
-  }
-  .history-clear-btn {
-    font-size: 12px;
-    color: var(--text-muted);
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-  }
-  .history-clear-btn:hover { color: var(--error); background: #fef2f2; }
-  .history-list { display: flex; flex-direction: column; gap: 8px; }
-  .history-item {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 12px 16px;
-    cursor: pointer;
-    transition: all 0.15s;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .history-item:hover { border-color: var(--highlight); background: var(--highlight-light); }
-  .history-item-content { flex: 1; overflow: hidden; }
-  .history-item-q {
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .history-item-time { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-  .history-item-del {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text-muted);
-    padding: 4px;
-    font-size: 14px;
-    line-height: 1;
-    border-radius: 4px;
-  }
-  .history-item-del:hover { color: var(--error); background: #fef2f2; }
-
-  /* DIVIDER */
-  .divider {
-    height: 1px;
-    background: var(--border);
-    margin: 20px 0;
-  }
-
-  /* RESPONSIVE */
-  @media (max-width: 600px) {
-    .tagline { display: none; }
-    .kb-btn { min-width: 38px; padding: 6px 7px; font-size: 12px; }
-    .result-body { padding: 16px; }
-    .solve-btn { flex: 1; }
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="TodoRemind">
+  <meta name="theme-color" content="#ffffff">
+  <title>TodoRemind</title>
+  <link rel="icon" href="favicon.ico">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<header>
-  <div class="logo">Math<span>Solve</span></div>
-  <div class="tagline">ステップバイステップで解く数学ソルバー</div>
-</header>
+<div id="app">
 
-<div class="container">
-
-  <!-- INPUT CARD -->
-  <div class="input-card">
-    <div class="tab-bar">
-      <button class="tab-btn active" onclick="switchInputTab('text')">テキスト入力</button>
-      <button class="tab-btn" onclick="switchInputTab('formula')">数式入力</button>
-      <button class="tab-btn" onclick="switchInputTab('image')">画像入力</button>
+  <!-- ── HEADER ── -->
+  <header>
+    <div class="logo" id="logo-btn">Todo<span>Remind</span></div>
+    <div id="sync-status" title="タップして設定">
+      <div id="sync-dot"></div>
+      <span id="sync-label">未設定</span>
     </div>
-
-    <!-- TEXT INPUT -->
-    <div class="text-input-area" id="tab-text">
-      <textarea id="text-input" placeholder="例：∫(0 to π) sin(x) dx を計算してください&#10;例：x² - 5x + 6 = 0 を解いてください"></textarea>
-    </div>
-
-    <!-- FORMULA INPUT -->
-    <div class="formula-input-area" id="tab-formula">
-      <div class="formula-display" id="formula-display">
-        <span id="formula-rendered"></span><span class="formula-cursor" id="formula-cursor"></span>
-      </div>
-      <div class="formula-raw" id="formula-raw">LaTeX: <span id="formula-latex-text">（数式を入力してください）</span></div>
-      <div class="math-keyboard">
-        <div class="kb-tabs" id="kb-tabs">
-          <button class="kb-tab active" onclick="switchKbTab('basic')">基本</button>
-          <button class="kb-tab" onclick="switchKbTab('trig')">三角</button>
-          <button class="kb-tab" onclick="switchKbTab('calculus')">微積分</button>
-          <button class="kb-tab" onclick="switchKbTab('log')">対数</button>
-          <button class="kb-tab" onclick="switchKbTab('matrix')">行列</button>
-          <button class="kb-tab" onclick="switchKbTab('symbol')">記号</button>
-        </div>
-        <div class="kb-panel active" id="kb-basic">
-          <div class="kb-grid" id="grid-basic"></div>
-        </div>
-        <div class="kb-panel" id="kb-trig">
-          <div class="kb-grid" id="grid-trig"></div>
-        </div>
-        <div class="kb-panel" id="kb-calculus">
-          <div class="kb-grid" id="grid-calculus"></div>
-        </div>
-        <div class="kb-panel" id="kb-log">
-          <div class="kb-grid" id="grid-log"></div>
-        </div>
-        <div class="kb-panel" id="kb-matrix">
-          <div class="kb-grid" id="grid-matrix"></div>
-        </div>
-        <div class="kb-panel" id="kb-symbol">
-          <div class="kb-grid" id="grid-symbol"></div>
-        </div>
+    <div id="settings-wrap">
+      <button id="settings-btn" title="設定">⚙️</button>
+      <div id="settings-menu">
+        <button class="settings-item" id="settings-notif">🔔 通知設定</button>
+        <hr class="settings-divider">
+        <button class="settings-item" id="settings-fav">⭐ お気に入り設定</button>
+        <hr class="settings-divider">
+        <button class="settings-item" id="settings-cache">🔄 キャッシュをクリアして再読み込み</button>
       </div>
     </div>
+  </header>
 
-    <!-- IMAGE INPUT -->
-    <div class="image-input-area" id="tab-image">
-      <div class="image-drop-zone" id="drop-zone" onclick="document.getElementById('image-input').click()">
-        <div class="icon">📷</div>
-        <p>クリックまたはドラッグで画像をアップロード</p>
-        <p style="font-size:11px;margin-top:4px;">PNG / JPG / JPEG 対応</p>
-      </div>
-      <input type="file" id="image-input" accept="image/*">
-      <div class="image-preview" id="image-preview">
-        <img id="preview-img" src="" alt="preview">
-        <button class="image-remove-btn" onclick="removeImage()">× 削除</button>
+  <!-- ── UPDATE BANNER ── -->
+  <div id="update-banner" style="display:none;">
+    <span id="update-banner-text">❗ アプリのアップデートをしてください ❗</span>
+  </div>
+
+  <!-- ── MAIN TABLE ── -->
+  <div id="table-outer">
+    <!-- 長期目標行（スクロール外・固定） -->
+    <div id="goal-row-wrap"></div>
+    <!-- スクロール可能エリア（日付ヘッダー＋タスク列） -->
+    <div id="scroll-wrap">
+      <div id="scroll-inner">
+        <div id="date-row-wrap"></div>
+        <div id="columns-wrap"></div>
       </div>
     </div>
   </div>
 
-  <!-- ACTION BAR -->
-  <div class="action-bar" style="margin-bottom:20px;">
-    <span class="hint-text" id="input-hint">問題を入力して「解く」を押してください</span>
-    <button class="clear-all-btn" onclick="clearAll()">クリア</button>
-    <button class="solve-btn" id="solve-btn" onclick="solve()">解く</button>
-  </div>
-
-  <!-- RESULT -->
-  <div class="result-section" id="result-section">
-    <div class="result-header">
-      <h2>解答・解説</h2>
-      <span class="result-badge" id="result-badge">完了</span>
-      <button id="raw-toggle-btn" onclick="toggleRaw()" style="margin-left:auto;font-size:11px;padding:3px 10px;background:none;border:1px solid var(--border);border-radius:10px;cursor:pointer;color:var(--text-muted);">生テキスト表示</button>
+  <!-- ── OVERDUE SECTION ── -->
+  <div id="overdue-section" class="hidden">
+    <div id="overdue-header">
+      <span id="overdue-title">⚠️ 未達成の過去タスク</span>
+      <button id="overdue-toggle">▼ 閉じる</button>
     </div>
-    <div class="result-body" id="result-body"></div>
-    <pre id="result-raw" style="display:none;padding:16px;font-size:12px;font-family:var(--font-mono);white-space:pre-wrap;word-break:break-all;background:var(--accent-soft);border-top:1px solid var(--border);color:var(--text-muted);max-height:300px;overflow-y:auto;"></pre>
+    <div id="overdue-list"></div>
   </div>
 
-  <!-- HISTORY -->
-  <div class="history-section" id="history-section">
-    <div class="divider"></div>
-    <div class="history-header">
-      <h3>計算履歴</h3>
-      <button class="history-clear-btn" onclick="clearHistory()">すべて削除</button>
+</div><!-- /#app -->
+
+
+<!-- ── TASK MODAL ── -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-title">
+      <span id="modal-title-text">新規作成</span>
+      <button class="modal-close" id="modal-close">✕</button>
     </div>
-    <div class="history-list" id="history-list"></div>
-  </div>
 
+    <div class="form-group">
+      <label class="form-label">タイトル</label>
+      <div class="title-fav-row">
+        <input class="form-input" id="f-title" type="text" placeholder="例: 数学の宿題提出">
+        <select class="form-select fav-select" id="f-fav-apply" title="お気に入りから入力">
+          <option value="">⭐ お気に入り</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="event-checkbox-label">
+        <input type="checkbox" id="f-is-event">
+        <span>予定にする（チェックボックスなし）</span>
+      </label>
+    </div>
+
+    <div class="form-group" id="f-date-group" style="display:none;">
+      <label class="form-label">日付（期限）</label>
+      <input class="form-input" id="f-date" type="date">
+    </div>
+
+    <div class="form-group" style="display:none;">
+      <label class="form-label">リマインド</label>
+      <select class="form-select" id="f-remind">
+        <option value="0">なし</option>
+        <option value="today">当日</option>
+        <option value="1">1日前</option>
+        <option value="2" selected>2日前</option>
+        <option value="3">3日前</option>
+        <option value="5">5日前</option>
+        <option value="7">7日前</option>
+        <option value="10">10日前</option>
+        <option value="14">2週間前</option>
+        <option value="30">30日前</option>
+      </select>
+    </div>
+
+    <div class="form-group" id="f-notif-time-group"></div>
+
+    <div class="form-group">
+      <label class="form-label">教科</label>
+      <select class="form-select" id="f-subject" onchange="handleSubjectChange(this.value)">
+        <option value="なし" selected>なし</option>
+        <option value="国語">国語</option>
+        <option value="数学">数学</option>
+        <option value="英語">英語</option>
+        <option value="化学">化学</option>
+        <option value="物理">物理</option>
+        <option value="生物">生物</option>
+        <option value="地理">地理</option>
+        <option value="日本史">日本史</option>
+        <option value="世界史">世界史</option>
+        <option value="情報">情報</option>
+        <option value="カスタム">カスタム（自由入力）</option>
+      </select>
+    </div>
+
+    <div class="form-group" id="custom-subject-group" style="display:none;">
+      <label class="form-label">カスタム教科名</label>
+      <input class="form-input" id="f-custom-subject" type="text" placeholder="例: 物理、体育、音楽…">
+    </div>
+
+    <!-- 書式 -->
+    <div class="form-group">
+      <label class="form-label">書式</label>
+      <div class="format-section">
+        <div class="format-row">
+          <button type="button" class="fmt-btn" id="fmt-bold"
+                  onclick="toggleFmt('bold')" title="太字">
+            <strong>B</strong>
+          </button>
+          <button type="button" class="fmt-btn" id="fmt-underline"
+                  onclick="toggleFmt('underline')" title="下線">
+            <span style="text-decoration:underline;">U</span>
+          </button>
+          <button type="button" class="fmt-btn" id="fmt-double-underline"
+                  onclick="toggleFmt('double-underline')" title="二重下線">
+            <span style="text-decoration:underline double;">U</span>
+          </button>
+        </div>
+        <div class="format-label-small">文字色</div>
+        <div class="color-picker-row" id="color-fg-row"></div>
+        <div class="color-custom-row">
+          <label class="format-label-small" for="color-fg-custom">カスタム文字色</label>
+          <input type="color" id="color-fg-custom" class="color-custom-input" value="#1a1e2e">
+        </div>
+        <div class="format-label-small">背景色</div>
+        <div class="color-picker-row" id="color-bg-row"></div>
+        <div class="color-custom-row">
+          <label class="format-label-small" for="color-bg-custom">カスタム背景色</label>
+          <input type="color" id="color-bg-custom" class="color-custom-input" value="#ffffff">
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">プレビュー</label>
+      <div id="format-preview" class="format-preview">テキスト</div>
+    </div>
+
+    <div class="modal-actions" id="modal-actions"></div>
+  </div>
 </div>
 
-<script>
-// ─── STATE ───────────────────────────────────────────
-let currentTab = 'text';
-let formulaLatex = '';
-let uploadedImageBase64 = null;
-let isLoading = false;
-let lastRawAnswer = '';
 
-function toggleRaw() {
-  const raw = document.getElementById('result-raw');
-  const btn = document.getElementById('raw-toggle-btn');
-  const shown = raw.style.display !== 'none';
-  raw.style.display = shown ? 'none' : 'block';
-  btn.textContent = shown ? '生テキスト表示' : '生テキスト非表示';
-}
+<!-- ── SETUP MODAL ── -->
+<div id="setup-overlay">
+  <div id="setup-box">
+    <h2>👤 ユーザーID設定</h2>
+    <p>自分だけのIDを決めてください。同じIDを使えばスマホ・iPad・PCどの端末からでもデータが共有されます。</p>
 
-// ─── KEYBOARD DEFINITIONS ────────────────────────────
-const KB_BUTTONS = {
-  basic: [
-    { label: '\\frac{□}{□}', latex: '\\frac{}{} ', display: '\\frac{a}{b}' },
-    { label: 'x^{□}',        latex: '^{} ',        display: 'x^n' },
-    { label: '\\sqrt{□}',    latex: '\\sqrt{} ',   display: '\\sqrt{x}' },
-    { label: '\\sqrt[□]{□}', latex: '\\sqrt[]{} ', display: '\\sqrt[n]{x}' },
-    { label: '|x|',           latex: '|x|',         display: '|x|' },
-    { label: '(',             latex: '(',            display: '(' },
-    { label: ')',             latex: ')',            display: ')' },
-    { label: '±',             latex: '\\pm ',        display: '\\pm' },
-    { label: '×',             latex: '\\times ',     display: '\\times' },
-    { label: '÷',             latex: '\\div ',       display: '\\div' },
-    { label: '≠',             latex: '\\neq ',       display: '\\neq' },
-    { label: '≤',             latex: '\\leq ',       display: '\\leq' },
-    { label: '≥',             latex: '\\geq ',       display: '\\geq' },
-    { label: '∞',             latex: '\\infty ',     display: '\\infty' },
-    { label: 'n!',            latex: 'n! ',          display: 'n!' },
-    { label: '⌫', latex: 'DEL', display: '⌫', cls: 'kb-btn-del' },
-    { label: 'C',  latex: 'CLEAR', display: 'C', cls: 'kb-btn-clear' },
-  ],
-  trig: [
-    { label: '\\sin', latex: '\\sin ',       display: '\\sin' },
-    { label: '\\cos', latex: '\\cos ',       display: '\\cos' },
-    { label: '\\tan', latex: '\\tan ',       display: '\\tan' },
-    { label: '\\sin^{-1}', latex: '\\sin^{-1} ', display: '\\sin^{-1}' },
-    { label: '\\cos^{-1}', latex: '\\cos^{-1} ', display: '\\cos^{-1}' },
-    { label: '\\tan^{-1}', latex: '\\tan^{-1} ', display: '\\tan^{-1}' },
-    { label: '\\csc', latex: '\\csc ', display: '\\csc' },
-    { label: '\\sec', latex: '\\sec ', display: '\\sec' },
-    { label: '\\cot', latex: '\\cot ', display: '\\cot' },
-    { label: 'π',    latex: '\\pi ',   display: '\\pi' },
-    { label: 'θ',    latex: '\\theta ',display: '\\theta' },
-    { label: '°',    latex: '^{\\circ} ', display: '^{\\circ}' },
-  ],
-  calculus: [
-    { label: '∫',         latex: '\\int ',               display: '\\int' },
-    { label: '∫(a to b)', latex: '\\int_{a}^{b} ',        display: '\\int_{a}^{b}' },
-    { label: '∑',         latex: '\\sum_{n=1}^{\\infty} ', display: '\\sum_{n=1}^{\\infty}' },
-    { label: '∏',         latex: '\\prod ',               display: '\\prod' },
-    { label: "d/dx",      latex: '\\frac{d}{dx} ',        display: '\\frac{d}{dx}' },
-    { label: "d²/dx²",    latex: '\\frac{d^2}{dx^2} ',    display: '\\frac{d^2}{dx^2}' },
-    { label: '∂/∂x',      latex: '\\frac{\\partial}{\\partial x} ', display: '\\frac{\\partial}{\\partial x}' },
-    { label: 'lim',        latex: '\\lim_{x \\to } ',     display: '\\lim_{x \\to a}' },
-    { label: 'x→∞',       latex: '\\lim_{x \\to \\infty} ', display: '\\lim_{x \\to \\infty}' },
-    { label: "f'(x)",      latex: "f'(x) ",               display: "f'(x)" },
-    { label: 'dx',         latex: '\\,dx ',               display: '\\,dx' },
-    { label: '∮',          latex: '\\oint ',              display: '\\oint' },
-  ],
-  log: [
-    { label: '\\log',       latex: '\\log ',        display: '\\log' },
-    { label: '\\log_{□}',  latex: '\\log_{} ',     display: '\\log_a' },
-    { label: '\\ln',        latex: '\\ln ',         display: '\\ln' },
-    { label: 'e^{□}',       latex: 'e^{} ',         display: 'e^x' },
-    { label: '10^{□}',      latex: '10^{} ',        display: '10^x' },
-    { label: 'e',            latex: 'e ',            display: 'e' },
-  ],
-  matrix: [
-    { label: '2×2行列', latex: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} ', display: '\\text{2×2}', cls: 'kb-btn-wide' },
-    { label: '3×3行列', latex: '\\begin{pmatrix} a & b & c \\\\ d & e & f \\\\ g & h & i \\end{pmatrix} ', display: '\\text{3×3}', cls: 'kb-btn-wide' },
-    { label: '列ベクトル', latex: '\\begin{pmatrix} x \\\\ y \\end{pmatrix} ', display: '\\vec{v}', cls: 'kb-btn-wide' },
-    { label: '行列式', latex: '\\det ', display: '\\det' },
-    { label: '転置', latex: '^{T} ', display: 'A^T' },
-    { label: '逆行列', latex: '^{-1} ', display: 'A^{-1}' },
-    { label: '\\vec{□}', latex: '\\vec{} ', display: '\\vec{a}' },
-    { label: '内積', latex: '\\cdot ', display: '\\cdot' },
-    { label: '外積', latex: '\\times ', display: '\\times' },
-    { label: '複素数 z', latex: 'z = a + bi ', display: 'z=a+bi', cls: 'kb-btn-wide' },
-    { label: '共役', latex: '\\bar{z} ', display: '\\bar{z}' },
-    { label: '|z|', latex: '|z| ', display: '|z|' },
-  ],
-  symbol: [
-    { label: 'α', latex: '\\alpha ', display: '\\alpha' },
-    { label: 'β', latex: '\\beta ',  display: '\\beta' },
-    { label: 'γ', latex: '\\gamma ', display: '\\gamma' },
-    { label: 'δ', latex: '\\delta ', display: '\\delta' },
-    { label: 'ε', latex: '\\epsilon ', display: '\\epsilon' },
-    { label: 'λ', latex: '\\lambda ', display: '\\lambda' },
-    { label: 'μ', latex: '\\mu ', display: '\\mu' },
-    { label: 'σ', latex: '\\sigma ', display: '\\sigma' },
-    { label: 'φ', latex: '\\phi ', display: '\\phi' },
-    { label: 'ω', latex: '\\omega ', display: '\\omega' },
-    { label: '∈', latex: '\\in ', display: '\\in' },
-    { label: '∉', latex: '\\notin ', display: '\\notin' },
-    { label: '⊂', latex: '\\subset ', display: '\\subset' },
-    { label: '⊆', latex: '\\subseteq ', display: '\\subseteq' },
-    { label: '∪', latex: '\\cup ', display: '\\cup' },
-    { label: '∩', latex: '\\cap ', display: '\\cap' },
-    { label: '∀', latex: '\\forall ', display: '\\forall' },
-    { label: '∃', latex: '\\exists ', display: '\\exists' },
-    { label: '→', latex: '\\to ', display: '\\to' },
-    { label: '⟺', latex: '\\iff ', display: '\\iff' },
-    { label: 'ℝ', latex: '\\mathbb{R} ', display: '\\mathbb{R}' },
-    { label: 'ℤ', latex: '\\mathbb{Z} ', display: '\\mathbb{Z}' },
-    { label: 'ℕ', latex: '\\mathbb{N} ', display: '\\mathbb{N}' },
-    { label: 'ℂ', latex: '\\mathbb{C} ', display: '\\mathbb{C}' },
-  ]
-};
-
-// ─── KEYBOARD RENDERING ──────────────────────────────
-function buildKeyboards() {
-  Object.keys(KB_BUTTONS).forEach(cat => {
-    const grid = document.getElementById('grid-' + cat);
-    KB_BUTTONS[cat].forEach(btn => {
-      const el = document.createElement('button');
-      el.className = 'kb-btn' + (btn.cls ? ' ' + btn.cls : '');
-      // For special action buttons use plain text; otherwise render with KaTeX
-      if (btn.latex === 'DEL' || btn.latex === 'CLEAR') {
-        el.textContent = btn.label;
-      } else {
-        try {
-          el.innerHTML = katex.renderToString(btn.display, { throwOnError: true, strict: false, displayMode: false });
-        } catch(e) {
-          el.textContent = btn.label;
-        }
-      }
-      el.title = btn.label;
-      if (btn.latex === 'DEL') {
-        el.textContent = '⌫';
-        el.onclick = () => formulaDelete();
-      } else if (btn.latex === 'CLEAR') {
-        el.textContent = 'C';
-        el.onclick = () => formulaClear();
-      } else {
-        el.onclick = () => formulaInsert(btn.latex);
-      }
-      grid.appendChild(el);
-    });
-  });
-}
-
-function switchKbTab(name) {
-  document.querySelectorAll('.kb-tab').forEach((t,i) => {
-    t.classList.toggle('active', t.getAttribute('onclick').includes("'" + name + "'"));
-  });
-  document.querySelectorAll('.kb-panel').forEach(p => {
-    p.classList.toggle('active', p.id === 'kb-' + name);
-  });
-}
-
-// ─── FORMULA EDITOR ──────────────────────────────────
-function formulaInsert(latex) {
-  formulaLatex += latex;
-  updateFormulaDisplay();
-}
-function formulaDelete() {
-  // Remove last token
-  formulaLatex = formulaLatex.replace(/\\[a-zA-Z]+\s?$|\\?\{[^}]*\}$|\S\s?$/, '');
-  updateFormulaDisplay();
-}
-function formulaClear() {
-  formulaLatex = '';
-  updateFormulaDisplay();
-}
-function updateFormulaDisplay() {
-  const rendered = document.getElementById('formula-rendered');
-  const latexText = document.getElementById('formula-latex-text');
-  const raw = formulaLatex.trim();
-  latexText.textContent = raw || '（数式を入力してください）';
-  if (raw) {
-    try {
-      rendered.innerHTML = katex.renderToString(raw, { throwOnError: false, displayMode: false });
-    } catch(e) {
-      rendered.textContent = raw;
-    }
-  } else {
-    rendered.innerHTML = '';
-  }
-}
-
-// ─── TABS ─────────────────────────────────────────────
-function switchInputTab(tab) {
-  currentTab = tab;
-  ['text','formula','image'].forEach(t => {
-    document.getElementById('tab-' + t).style.display = t === tab ? 'block' : 'none';
-  });
-  document.querySelectorAll('.tab-btn').forEach((btn, i) => {
-    btn.classList.toggle('active', ['text','formula','image'][i] === tab);
-  });
-  if (tab === 'formula') {
-    document.getElementById('tab-formula').style.display = 'block';
-  }
-}
-
-// ─── IMAGE UPLOAD ─────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  const dropZone = document.getElementById('drop-zone');
-  const fileInput = document.getElementById('image-input');
-
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (file) handleImageFile(file);
-  });
-  fileInput.addEventListener('change', e => {
-    if (e.target.files[0]) handleImageFile(e.target.files[0]);
-  });
-
-  buildKeyboards();
-  loadHistory();
-  // init tabs
-  document.getElementById('tab-formula').style.display = 'none';
-  document.getElementById('tab-image').style.display = 'none';
-});
-
-function handleImageFile(file) {
-  const reader = new FileReader();
-  reader.onload = e => {
-    uploadedImageBase64 = e.target.result;
-    document.getElementById('preview-img').src = e.target.result;
-    document.getElementById('image-preview').style.display = 'block';
-    document.getElementById('drop-zone').style.display = 'none';
-  };
-  reader.readAsDataURL(file);
-}
-function removeImage() {
-  uploadedImageBase64 = null;
-  document.getElementById('image-preview').style.display = 'none';
-  document.getElementById('drop-zone').style.display = 'block';
-  document.getElementById('image-input').value = '';
-}
-
-// ─── CLEAR ────────────────────────────────────────────
-function clearAll() {
-  document.getElementById('text-input').value = '';
-  formulaClear();
-  removeImage();
-  document.getElementById('result-section').style.display = 'none';
-}
-
-// ─── SOLVE ────────────────────────────────────────────
-async function solve() {
-  if (isLoading) return;
-
-  let question = '';
-  let imageData = null;
-
-  if (currentTab === 'text') {
-    question = document.getElementById('text-input').value.trim();
-  } else if (currentTab === 'formula') {
-    question = formulaLatex.trim();
-    if (question) question = 'LaTeX数式: ' + question;
-  } else if (currentTab === 'image') {
-    if (!uploadedImageBase64) { alert('画像をアップロードしてください'); return; }
-    imageData = uploadedImageBase64;
-    question = '画像に書かれた数学の問題を解いてください';
-  }
-
-  if (!question && !imageData) {
-    alert('問題を入力してください');
-    return;
-  }
-
-  isLoading = true;
-  const btn = document.getElementById('solve-btn');
-  btn.classList.add('loading');
-  btn.disabled = true;
-
-  const resultSection = document.getElementById('result-section');
-  const resultBody = document.getElementById('result-body');
-  const badge = document.getElementById('result-badge');
-  resultSection.style.display = 'none';
-
-  try {
-    const systemPrompt = `あなたは優秀な数学の先生です。与えられた数学の問題を以下の形式で解いてください。
-
-回答は必ずMarkdownと LaTeX の混合形式で書いてください。
-- インライン数式は $...$ で囲む
-- ブロック数式は $$...$$ で囲む
-- ステップごとに見出し「## ステップ N: タイトル」を使う
-- 最後に「## 最終答え」セクションで答えをまとめる
-- 丁寧に、しかし簡潔に説明する
-- 間違いがないよう、慎重に計算する
-- 日本語で回答する`;
-
-    const userContent = imageData
-      ? [
-          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData.split(',')[1] } },
-          { type: 'text', text: '画像の数学問題をステップバイステップで解いてください。' }
-        ]
-      : question;
-
-    const res = await fetch('https://text.pollinations.ai/openai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'openai',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userContent }
-        ]
-      })
-    });
-
-    if (!res.ok) throw new Error('APIエラー: ' + res.status);
-    const data = await res.json();
-    const answer = data.choices?.[0]?.message?.content || 'エラーが発生しました';
-
-    lastRawAnswer = answer;
-    document.getElementById('result-raw').textContent = answer;
-    displayResult(answer);
-    badge.textContent = '完了';
-    badge.style.background = 'var(--highlight)';
-    resultSection.style.display = 'block';
-
-    // Save to history
-    saveHistory(question || '画像の問題', answer);
-
-  } catch (err) {
-    resultBody.innerHTML = `<div class="error-box">⚠️ エラーが発生しました: ${err.message}<br><small>しばらく待ってから再試行してください。</small></div>`;
-    badge.textContent = 'エラー';
-    badge.style.background = 'var(--error)';
-    resultSection.style.display = 'block';
-  } finally {
-    isLoading = false;
-    btn.classList.remove('loading');
-    btn.disabled = false;
-  }
-}
-
-// ─── DISPLAY RESULT ───────────────────────────────────
-function displayResult(markdown) {
-  const body = document.getElementById('result-body');
-
-  const sections = markdown.split(/^## /m).filter(Boolean);
-  let html = '';
-
-  if (sections.length <= 1) {
-    html = '<div class="step"><div class="step-content">' + renderMarkdown(markdown) + '</div></div>';
-  } else {
-    sections.forEach((sec) => {
-      const lines = sec.split('\n');
-      const title = lines[0].trim();
-      const content = lines.slice(1).join('\n').trim();
-      const isFinal = title.includes('最終答え') || title.includes('答え') || title.includes('Answer');
-      const safeTitle = title.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      if (isFinal) {
-        html += `<div class="answer-box"><div class="answer-label">&#10003; ${safeTitle}</div><div class="step-content">${renderMarkdown(content)}</div></div>`;
-      } else {
-        html += `<div class="step"><div class="step-label">${safeTitle}</div><div class="step-content">${renderMarkdown(content)}</div></div>`;
-      }
-    });
-  }
-
-  body.innerHTML = html;
-
-  // Render KaTeX after setting innerHTML
-  if (typeof renderMathInElement === 'function') {
-    renderMathInElement(body, {
-      delimiters: [
-        { left: '$$',  right: '$$',  display: true  },
-        { left: '$',   right: '$',   display: false },
-        { left: '\\[', right: '\\]', display: true  },
-        { left: '\\(', right: '\\)', display: false }
-      ],
-      throwOnError: false,
-      strict: false,
-      trust: true,
-      macros: { '\\R': '\\mathbb{R}' }
-    });
-  }
-}
-
-function renderMarkdown(text) {
-  // Protect ALL math blocks before any HTML processing.
-  // Use a safe placeholder that survives innerHTML assignment.
-  const mathBlocks = [];
-  const protect = (raw) => {
-    mathBlocks.push(raw);
-    return 'MATHBLOCK_' + (mathBlocks.length - 1) + '_END';
-  };
-
-  let t = text
-    // \begin{...}...\end{...} LaTeX environments
-    .replace(/\\begin\{[^}]+\}[\s\S]+?\\end\{[^}]+\}/g, protect)
-    // \[...\] display math
-    .replace(/\\\[[\s\S]+?\\\]/g, protect)
-    // \(...\) inline math
-    .replace(/\\\([\s\S]+?\\\)/g, protect)
-    // $$...$$ display math
-    .replace(/\$\$[\s\S]+?\$\$/g, protect)
-    // $...$ inline math (no newlines inside)
-    .replace(/\$[^\n$]+?\$/g, protect);
-
-  // Apply markdown transforms — math is safely replaced with placeholders
-  t = t
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code style="background:var(--accent-soft);padding:1px 5px;border-radius:3px;font-family:var(--font-mono);font-size:0.9em">$1</code>')
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br>')
-    .replace(/^/, '<p>')
-    .replace(/$/, '</p>');
-
-  // Restore original math strings verbatim (placeholders are plain ASCII — safe in innerHTML)
-  t = t.replace(/MATHBLOCK_(\d+)_END/g, (_, i) => mathBlocks[parseInt(i)]);
-
-  return t;
-}
-
-// ─── HISTORY ──────────────────────────────────────────
-function saveHistory(question, answer) {
-  let history = JSON.parse(localStorage.getItem('mathsolve_history') || '[]');
-  history.unshift({
-    id: Date.now(),
-    question: question.substring(0, 100),
-    answer,
-    time: new Date().toLocaleString('ja-JP')
-  });
-  history = history.slice(0, 20); // keep last 20
-  localStorage.setItem('mathsolve_history', JSON.stringify(history));
-  loadHistory();
-}
-
-function loadHistory() {
-  const history = JSON.parse(localStorage.getItem('mathsolve_history') || '[]');
-  const section = document.getElementById('history-section');
-  const list = document.getElementById('history-list');
-
-  if (history.length === 0) {
-    section.style.display = 'none';
-    return;
-  }
-  section.style.display = 'block';
-  list.innerHTML = history.map(item => `
-    <div class="history-item" onclick="loadHistoryItem(${item.id})">
-      <div class="history-item-content">
-        <div class="history-item-q">${escHtml(item.question)}</div>
-        <div class="history-item-time">${item.time}</div>
-      </div>
-      <button class="history-item-del" onclick="event.stopPropagation();deleteHistoryItem(${item.id})" title="削除">×</button>
+    <div id="setup-current-user-wrap">
+      <span class="label">ログイン中：</span>
+      <span id="setup-current-uid"></span>
     </div>
-  `).join('');
-}
 
-function loadHistoryItem(id) {
-  const history = JSON.parse(localStorage.getItem('mathsolve_history') || '[]');
-  const item = history.find(h => h.id === id);
-  if (!item) return;
-  if (currentTab === 'text') {
-    document.getElementById('text-input').value = item.question;
-  }
-  displayResult(item.answer);
-  document.getElementById('result-section').style.display = 'block';
-  document.getElementById('result-badge').textContent = '履歴';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
+    <div class="setup-field">
+      <label>ユーザーID（変更する場合）</label>
+      <input type="text" id="setup-uid" placeholder="例: GIGAJI"
+        autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="1">
+    </div>
 
-function deleteHistoryItem(id) {
-  let history = JSON.parse(localStorage.getItem('mathsolve_history') || '[]');
-  history = history.filter(h => h.id !== id);
-  localStorage.setItem('mathsolve_history', JSON.stringify(history));
-  loadHistory();
-}
+    <button id="setup-save" tabindex="2">保存して同期開始</button>
+    <p id="setup-hint">英数字・ハイフン・アンダーバーのみ使えます。<br>他の人と同じIDにすると共有されます。</p>
 
-function clearHistory() {
-  if (!confirm('履歴をすべて削除しますか？')) return;
-  localStorage.removeItem('mathsolve_history');
-  loadHistory();
-}
+    <button id="setup-logout" tabindex="3">ログアウト（このデバイスのデータを削除）</button>
+    <button id="setup-skip" tabindex="4">スキップ（このデバイスのみで使う）</button>
+  </div>
+</div>
 
-function escHtml(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-</script>
+
+<!-- ── 通知モーダル ── -->
+<div id="notif-overlay">
+  <div id="notif-box">
+    <div class="notif-modal-title">
+      <span>🔔 通知設定</span>
+      <button id="notif-close-btn" class="modal-close">✕</button>
+    </div>
+
+    <!-- この端末の通知状態 -->
+    <div class="notif-status-card" id="notif-status-card">
+      <div class="notif-status-info">
+        <div class="notif-status-label">この端末の通知</div>
+        <div class="notif-status-text" id="notif-status-text">確認中…</div>
+      </div>
+      <button class="btn-notif" id="notif-toggle-btn" onclick="handleNotifBtn()">確認中</button>
+    </div>
+
+    <!-- デバッグメッセージ -->
+    <div id="notif-debug-msg"></div>
+
+    <!-- テスト通知 -->
+    <div class="notif-section-divider"></div>
+    <button class="btn-test-notif" id="notif-test-btn" onclick="sendTestNotif()">
+      📨 テスト通知を送る
+    </button>
+    <div class="notif-test-hint">すべての登録端末に送信されます</div>
+  </div>
+</div>
+
+
+<!-- ── お気に入りモーダル ── -->
+<div class="modal-overlay" id="fav-modal-overlay">
+  <div class="modal">
+    <div class="modal-title">
+      <span id="fav-modal-title-text">⭐ お気に入り設定</span>
+      <button class="modal-close" id="fav-modal-close">✕</button>
+    </div>
+
+    <!-- 登録済みリスト -->
+    <div id="fav-list-section">
+      <div id="fav-list"></div>
+      <button class="btn-primary" id="fav-new-btn" style="margin-top:10px;">＋ 新しいお気に入りを追加</button>
+    </div>
+
+    <!-- 編集フォーム -->
+    <div id="fav-edit-section" style="display:none;">
+      <div class="form-group">
+        <label class="form-label">タイトル</label>
+        <input class="form-input" id="fav-f-title" type="text" placeholder="例: 数学の宿題">
+      </div>
+      <div class="form-group" style="display:none;">
+        <label class="form-label">リマインド</label>
+        <select class="form-select" id="fav-f-remind">
+          <option value="0">なし</option>
+          <option value="today">当日</option>
+          <option value="1">1日前</option>
+          <option value="2" selected>2日前</option>
+          <option value="3">3日前</option>
+          <option value="5">5日前</option>
+          <option value="7">7日前</option>
+          <option value="10">10日前</option>
+          <option value="14">2週間前</option>
+          <option value="30">30日前</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="event-checkbox-label">
+          <input type="checkbox" id="fav-f-is-event">
+          <span>予定にする（チェックボックスなし）</span>
+        </label>
+      </div>
+
+      <div class="form-group" id="fav-f-notif-time-group"></div>
+      <div class="form-group">
+        <label class="form-label">教科</label>
+        <select class="form-select" id="fav-f-subject" onchange="handleFavSubjectChange(this.value)">
+          <option value="なし" selected>なし</option>
+          <option value="国語">国語</option>
+          <option value="数学">数学</option>
+          <option value="英語">英語</option>
+          <option value="化学">化学</option>
+          <option value="物理">物理</option>
+          <option value="生物">生物</option>
+          <option value="地理">地理</option>
+          <option value="日本史">日本史</option>
+          <option value="世界史">世界史</option>
+          <option value="情報">情報</option>
+          <option value="カスタム">カスタム（自由入力）</option>
+        </select>
+      </div>
+      <div class="form-group" id="fav-custom-subject-group" style="display:none;">
+        <label class="form-label">カスタム教科名</label>
+        <input class="form-input" id="fav-f-custom-subject" type="text" placeholder="例: 体育、音楽…">
+      </div>
+      <div class="form-group">
+        <label class="form-label">書式</label>
+        <div class="format-section">
+          <div class="format-row">
+            <button type="button" class="fmt-btn" id="fav-fmt-bold" onclick="toggleFavFmt('bold')" title="太字"><strong>B</strong></button>
+            <button type="button" class="fmt-btn" id="fav-fmt-underline" onclick="toggleFavFmt('underline')" title="下線"><span style="text-decoration:underline;">U</span></button>
+            <button type="button" class="fmt-btn" id="fav-fmt-double-underline" onclick="toggleFavFmt('double-underline')" title="二重下線"><span style="text-decoration:underline double;">U</span></button>
+          </div>
+          <div class="format-label-small">文字色</div>
+          <div class="color-picker-row" id="fav-color-fg-row"></div>
+          <div class="color-custom-row">
+            <label class="format-label-small" for="fav-color-fg-custom">カスタム文字色</label>
+            <input type="color" id="fav-color-fg-custom" class="color-custom-input" value="#1a1e2e">
+          </div>
+          <div class="format-label-small">背景色</div>
+          <div class="color-picker-row" id="fav-color-bg-row"></div>
+          <div class="color-custom-row">
+            <label class="format-label-small" for="fav-color-bg-custom">カスタム背景色</label>
+            <input type="color" id="fav-color-bg-custom" class="color-custom-input" value="#ffffff">
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">プレビュー</label>
+        <div id="fav-format-preview" class="format-preview">テキスト</div>
+      </div>
+      <div class="modal-actions" id="fav-modal-actions"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── アップデートモーダル ── -->
+<div class="modal-overlay" id="update-modal-overlay">
+  <div class="modal">
+    <div class="modal-title">
+      <span>🆕 アップデート情報</span>
+      <button class="modal-close" id="update-modal-close">✕</button>
+    </div>
+    <button class="btn-primary" id="update-do-btn" style="margin-bottom:16px;">🔄 今すぐアップデート</button>
+    <div id="update-log"></div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div id="toast"></div>
+
+<script src="script.js"></script>
 </body>
 </html>
