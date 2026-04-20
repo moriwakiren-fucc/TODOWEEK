@@ -580,6 +580,31 @@ header {
 }
 .task-item.is-event .task-cb { display: none; }
 
+/* ── アップデートバナー ── */
+#update-banner {
+  flex-shrink: 0; background: #fff3e0; border-bottom: 2px solid #f0a060;
+  padding: 8px 14px; text-align: center; cursor: pointer;
+  transition: background 0.15s;
+}
+#update-banner:hover { background: #ffe0b2; }
+#update-banner-text {
+  font-size: 14px; font-weight: 700; color: #c05000;
+  text-decoration: underline; letter-spacing: 0.02em;
+}
+
+/* アップデートログ */
+.update-entry {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 10px; background: var(--surface2);
+}
+.update-entry-version {
+  font-size: 15px; font-weight: 700; color: var(--accent);
+  font-family: 'DM Serif Display', serif;
+}
+.update-entry-date { font-size: 12px; color: var(--text3); margin: 2px 0 8px; }
+.update-entry-changes { font-size: 13px; color: var(--text); line-height: 1.7; }
+.update-entry-changes li { margin-left: 16px; }
+
 /* ── テキスト選択禁止 ── */
 #app, .task-item, .col-body, .date-col-header, header {
   -webkit-user-select: none;
