@@ -39,6 +39,11 @@
     </div>
   </header>
 
+  <!-- ── UPDATE BANNER ── -->
+  <div id="update-banner" style="display:none;">
+    <span id="update-banner-text">❗ アプリのアップデートをしてください ❗</span>
+  </div>
+
   <!-- ── MAIN TABLE ── -->
   <div id="table-outer">
     <!-- 長期目標行（スクロール外・固定） -->
@@ -326,6 +331,18 @@
       </div>
       <div class="modal-actions" id="fav-modal-actions"></div>
     </div>
+  </div>
+</div>
+
+<!-- ── アップデートモーダル ── -->
+<div class="modal-overlay" id="update-modal-overlay">
+  <div class="modal">
+    <div class="modal-title">
+      <span>🆕 アップデート情報</span>
+      <button class="modal-close" id="update-modal-close">✕</button>
+    </div>
+    <button class="btn-primary" id="update-do-btn" style="margin-bottom:16px;">🔄 今すぐアップデート</button>
+    <div id="update-log"></div>
   </div>
 </div>
 
