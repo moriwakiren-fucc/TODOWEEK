@@ -4,7 +4,9 @@ const CFG_KEY    = 'todoweek_config_v1';
 const TASKS_KEY  = 'todoweek_tasks_v2';
 const GOAL_KEY   = 'todoweek_goal_v1';
 const SUB_KEY    = 'todoweek_sub_v1';
-const FAV_KEY    = 'todoweek_favorites_v1';
+const FAV_KEY        = 'todoweek_favorites_v1';
+const VERSION_KEY    = 'todoweek_version_v1';
+const VERSION_URL    = 'https://moriwakiren-fucc.github.io/TODOWEEK/version.json';
 
 // ── STATE ──
 let config = {};
@@ -793,6 +795,16 @@ function getNotifTimesFromGroup(gid) {
     .filter(n => n.remind !== 'none'); // なし選択は除外
 }
 
+// お気に入り用：noneも保持して保存
+function getFavNotifTimesFromGroup(gid) {
+  const listId = (gid || 'fav-f-notif-time-group') + '-list';
+  const rows   = document.querySelectorAll(`#${listId} .notif-time-row`);
+  return Array.from(rows).map(row => ({
+    remind: row.querySelector('.notif-remind-sel').value,
+    time:   row.querySelector('.time-select-h').value + ':' + row.querySelector('.time-select-m').value,
+  }));
+}
+
 
 function updateNotifTimeVisibility(gid) {
   const remindSel = document.getElementById(gid === 'fav-f-notif-time-group' ? 'fav-f-remind' : 'f-remind');
@@ -1116,22 +1128,7 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
   document.getElementById('settings-cache').addEventListener('click', async () => {
     menu.classList.remove('open');
     if (!confirm('キャッシュをクリアして再読み込みしますか？\n最新の更新が反映されます。')) return;
-    showToast('キャッシュをクリア中…');
-    try {
-      // Service Worker の登録を解除
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map(r => r.unregister()));
-      }
-      // 全キャッシュを削除
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-      }
-    } catch(e) {
-      console.warn('Cache clear error:', e);
-    }
-    window.location.reload();
+    await safeCacheClean();
   });
 })();
 
@@ -1183,13 +1180,11 @@ function applyFavToModal(fav) {
     document.getElementById('f-custom-subject').value = fav.subject;
     document.getElementById('custom-subject-group').style.display = 'block';
   }
-  // 通知（{remind,time}配列）
+  // 通知（{remind,time}配列）- noneも含めてそのまま渡す
   const favNotifs = Array.isArray(fav.notifications) && fav.notifications.length
     ? fav.notifications
-    : getNotifsArray(fav);
-  if (favNotifs.length) {
-    buildNotifTimesList(favNotifs, 'f-notif-time-group');
-  }
+    : (getNotifsArray(fav).length ? getNotifsArray(fav) : [{ remind: 'none', time: '07:00' }]);
+  buildNotifTimesList(favNotifs, 'f-notif-time-group');
   // 書式
   if (fav.format) {
     fmt.bold = !!fav.format.bold;
@@ -1296,16 +1291,18 @@ function saveFav() {
   const subject = subjEl === 'カスタム'
     ? (document.getElementById('fav-f-custom-subject').value.trim() || 'カスタム')
     : subjEl;
-  const notifications = getNotifTimesFromGroup('fav-f-notif-time-group'); // noneは除外済み
-  // fav-f-remindは非表示のため通知から自動算出
-  const remind = notifications.length
-    ? (notifications.some(n => n.remind === 'today') ? 'today'
-      : String(Math.max(...notifications.map(n => parseInt(n.remind) || 0))))
+  const notifications = getFavNotifTimesFromGroup('fav-f-notif-time-group'); // noneも保持
+  // 実際の有効通知数（none以外）
+  const effectiveNotifs = notifications.filter(n => n.remind !== 'none');
+  // fav-f-remindは非表示のため通知から自動算出（noneを除く）
+  const remind = effectiveNotifs.length
+    ? (effectiveNotifs.some(n => n.remind === 'today') ? 'today'
+      : String(Math.max(...effectiveNotifs.map(n => parseInt(n.remind) || 0))))
     : '0';
   const format = { bold:favFmt.bold, underline:favFmt.underline, 'double-underline':favFmt['double-underline'], fg:favFmt.fg, bg:favFmt.bg };
 
   // 1項目でも内容があれば保存可
-  if (!title && subject === 'なし' && !notifications.length) {
+  if (!title && subject === 'なし' && !effectiveNotifs.length) {
     showToast('内容を1つ以上入力してください'); return;
   }
 
@@ -1367,6 +1364,104 @@ function updateFavPreview() {
   prev.textContent = titleVal;
 }
 
+// ── バージョンチェック・アップデート ──
+let versionLog = []; // version.jsonの全エントリ
+
+async function checkVersion() {
+  try {
+    const r = await fetch(VERSION_URL + '?t=' + Date.now());
+    if (!r.ok) return;
+    versionLog = await r.json();
+    if (!Array.isArray(versionLog) || !versionLog.length) return;
+
+    const latestVersion = versionLog[0].version;
+    const savedVersion  = localStorage.getItem(VERSION_KEY);
+
+    if (savedVersion !== latestVersion) {
+      // 未アップデートバージョンを絞り込む
+      const pendingVersions = savedVersion
+        ? versionLog.filter(e => e.version > savedVersion)
+        : versionLog;
+      showUpdateBanner(pendingVersions.length ? pendingVersions : versionLog);
+    }
+  } catch(e) {
+    console.warn('version check failed:', e);
+  }
+}
+
+function showUpdateBanner(pendingEntries) {
+  const banner = document.getElementById('update-banner');
+  if (banner) banner.style.display = '';
+  // バナークリックでモーダル
+  document.getElementById('update-banner-text').onclick = () => showUpdateModal(pendingEntries);
+}
+
+function showUpdateModal(entries) {
+  const log = document.getElementById('update-log');
+  log.innerHTML = '';
+  (entries || versionLog).forEach(entry => {
+    const div = document.createElement('div'); div.className = 'update-entry';
+    const changesList = (entry.changes || []).map(c => `<li>${esc(c)}</li>`).join('');
+    div.innerHTML = `
+      <div class="update-entry-version">${esc(entry.version)}</div>
+      <div class="update-entry-date">${esc(entry.date)}</div>
+      <ul class="update-entry-changes">${changesList}</ul>`;
+    log.appendChild(div);
+  });
+  document.getElementById('update-modal-overlay').classList.add('open');
+}
+
+document.getElementById('update-modal-close').addEventListener('click', () => {
+  document.getElementById('update-modal-overlay').classList.remove('open');
+});
+document.getElementById('update-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
+document.getElementById('update-do-btn').addEventListener('click', () => {
+  document.getElementById('update-modal-overlay').classList.remove('open');
+  safeCacheClean();
+});
+
+// ── 安全なキャッシュクリア（同期確認付き） ──
+async function safeCacheClean() {
+  // オフラインチェック
+  if (!navigator.onLine) {
+    alert('インターネットに接続してから再度お試しください');
+    return;
+  }
+  // 未ログインチェック
+  if (!config.userId) {
+    const ok = confirm('ログインされていないので、このまま進むと保存されたデータが全て失われますがよろしいですか？');
+    if (!ok) return;
+  } else {
+    // 同期を試みる
+    showToast('同期中…');
+    try {
+      await pushToCloud();
+      await pushFavoritesToCloud();
+    } catch(e) {
+      alert('インターネットに接続してから再度お試しください');
+      return;
+    }
+  }
+  showToast('キャッシュをクリア中…');
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+    // 最新バージョンを記録してからリロード
+    if (versionLog.length) localStorage.setItem(VERSION_KEY, versionLog[0].version);
+  } catch(e) {
+    console.warn('Cache clear error:', e);
+  }
+  window.location.reload();
+}
+
 // ── EVENTS ──
 document.getElementById('modal-overlay').addEventListener('click', function(e) {
   if (e.target !== this) return;
@@ -1398,6 +1493,7 @@ getVapidPublicKey();
 render();
 updateNotifHeaderBtn();
 if (!config.userId) { showSetup(); } else { pullFromCloud(); }
+checkVersion();
 setInterval(() => { const n=new Date(); if(n.getHours()===0&&n.getMinutes()===0) render(); }, 60000);
 
 // オンライン復帰時に未同期データを自動送信
