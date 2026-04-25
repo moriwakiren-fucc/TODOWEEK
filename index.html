@@ -34,6 +34,10 @@
         <hr class="settings-divider">
         <button class="settings-item" id="settings-fav">⭐ お気に入り設定</button>
         <hr class="settings-divider">
+        <button class="settings-item" id="settings-default">📋 デフォルト設定</button>
+        <hr class="settings-divider">
+        <button class="settings-item" id="settings-subject-color">🎨 科目と色</button>
+        <hr class="settings-divider">
         <button class="settings-item" id="settings-cache">🔄 キャッシュをクリアして再読み込み</button>
       </div>
     </div>
@@ -145,10 +149,6 @@
       <label class="form-label">書式</label>
       <div class="format-section">
         <div class="format-row">
-          <button type="button" class="fmt-btn" id="fmt-bold"
-                  onclick="toggleFmt('bold')" title="太字">
-            <strong>B</strong>
-          </button>
           <button type="button" class="fmt-btn" id="fmt-underline"
                   onclick="toggleFmt('underline')" title="下線">
             <span style="text-decoration:underline;">U</span>
@@ -307,7 +307,6 @@
         <label class="form-label">書式</label>
         <div class="format-section">
           <div class="format-row">
-            <button type="button" class="fmt-btn" id="fav-fmt-bold" onclick="toggleFavFmt('bold')" title="太字"><strong>B</strong></button>
             <button type="button" class="fmt-btn" id="fav-fmt-underline" onclick="toggleFavFmt('underline')" title="下線"><span style="text-decoration:underline;">U</span></button>
             <button type="button" class="fmt-btn" id="fav-fmt-double-underline" onclick="toggleFavFmt('double-underline')" title="二重下線"><span style="text-decoration:underline double;">U</span></button>
           </div>
@@ -343,6 +342,79 @@
     </div>
     <button class="btn-primary" id="update-do-btn" style="margin-bottom:16px;">🔄 今すぐアップデート</button>
     <div id="update-log"></div>
+  </div>
+</div>
+
+<!-- ── デフォルト設定モーダル ── -->
+<div class="modal-overlay" id="default-modal-overlay">
+  <div class="modal">
+    <div class="modal-title">
+      <span>📋 デフォルト設定</span>
+      <button class="modal-close" id="default-modal-close">✕</button>
+    </div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:14px;">追加画面を開いたときの初期値を設定します。</p>
+    <div class="form-group">
+      <label class="form-label">リマインド</label>
+      <select class="form-select" id="def-remind">
+        <option value="0">なし</option>
+        <option value="today">当日</option>
+        <option value="1">1日前</option>
+        <option value="2" selected>2日前</option>
+        <option value="3">3日前</option>
+        <option value="5">5日前</option>
+        <option value="7">7日前</option>
+        <option value="10">10日前</option>
+        <option value="14">2週間前</option>
+        <option value="30">30日前</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="event-checkbox-label">
+        <input type="checkbox" id="def-is-event">
+        <span>予定にする（チェックボックスなし）</span>
+      </label>
+    </div>
+    <div class="form-group">
+      <label class="form-label">教科</label>
+      <select class="form-select" id="def-subject" onchange="handleDefSubjectChange(this.value)">
+        <option value="なし" selected>なし</option>
+        <option value="国語">国語</option>
+        <option value="数学">数学</option>
+        <option value="英語">英語</option>
+        <option value="化学">化学</option>
+        <option value="物理">物理</option>
+        <option value="生物">生物</option>
+        <option value="地理">地理</option>
+        <option value="日本史">日本史</option>
+        <option value="世界史">世界史</option>
+        <option value="情報">情報</option>
+        <option value="カスタム">カスタム（自由入力）</option>
+      </select>
+    </div>
+    <div class="form-group" id="def-custom-subject-group" style="display:none;">
+      <label class="form-label">カスタム教科名</label>
+      <input class="form-input" id="def-custom-subject" type="text" placeholder="例: 体育、音楽…">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="default-save-btn">保存する</button>
+      <button class="btn-secondary" id="default-cancel-btn">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 科目と色モーダル ── -->
+<div class="modal-overlay" id="subject-color-modal-overlay">
+  <div class="modal">
+    <div class="modal-title">
+      <span>🎨 科目と色</span>
+      <button class="modal-close" id="subject-color-modal-close">✕</button>
+    </div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:14px;">各科目の文字色・背景色を設定します。書式設定のパレットにも追加されます。</p>
+    <div id="subject-color-list"></div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="subject-color-save-btn">保存する</button>
+      <button class="btn-secondary" id="subject-color-cancel-btn">キャンセル</button>
+    </div>
   </div>
 </div>
 
