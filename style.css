@@ -605,6 +605,28 @@ header {
 .update-entry-changes { font-size: 13px; color: var(--text); line-height: 1.7; }
 .update-entry-changes li { margin-left: 16px; }
 
+/* ── 科目と色リスト ── */
+.subject-color-row {
+  display: grid; grid-template-columns: 80px 1fr 1fr; gap: 8px;
+  align-items: center; margin-bottom: 10px;
+}
+.subject-color-name {
+  font-size: 14px; font-weight: 600; color: var(--text);
+}
+.subject-color-preview {
+  display: inline-block; padding: 3px 10px; border-radius: 6px;
+  font-size: 12px; border: 1px solid var(--border);
+}
+.subject-color-inputs { display: flex; gap: 6px; align-items: center; }
+.subject-color-inputs label { font-size: 12px; color: var(--text2); }
+.subject-color-inputs input[type="color"] {
+  width: 36px; height: 36px; border-radius: 6px; border: 1.5px solid var(--border);
+  cursor: pointer; padding: 2px;
+}
+
+/* ── デフォルト設定 ── */
+/* 既存のモーダルスタイルを流用するため追加CSS不要 */
+
 /* ── テキスト選択禁止 ── */
 #app, .task-item, .col-body, .date-col-header, header {
   -webkit-user-select: none;
