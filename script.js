@@ -4,9 +4,11 @@ const CFG_KEY    = 'todoweek_config_v1';
 const TASKS_KEY  = 'todoweek_tasks_v2';
 const GOAL_KEY   = 'todoweek_goal_v1';
 const SUB_KEY    = 'todoweek_sub_v1';
-const FAV_KEY        = 'todoweek_favorites_v1';
-const VERSION_KEY    = 'todoweek_version_v1';
-const VERSION_URL    = 'https://moriwakiren-fucc.github.io/TODOWEEK/version.json';
+const FAV_KEY           = 'todoweek_favorites_v1';
+const VERSION_KEY       = 'todoweek_version_v1';
+const DEFAULT_KEY       = 'todoweek_default_v1';
+const SUBJECT_COLOR_KEY = 'todoweek_subject_colors_v1';
+const VERSION_URL       = 'https://moriwakiren-fucc.github.io/TODOWEEK/version.json';
 
 // ── STATE ──
 let config = {};
@@ -26,7 +28,8 @@ let cachedVapidKey = null;
 let fmt = { bold: false, underline: false, 'double-underline': false, fg: null, bg: null };
 
 // ── SUBJECT COLOR MAP ──
-const SUBJECT_COLORS = {
+// SUBJECT_COLORS はローカル設定で上書き可能
+const SUBJECT_COLORS_DEFAULT = {
   '国語':   { bg: '#ffeaea', fg: '#cc2222' },
   '数学':   { bg: '#e8f0ff', fg: '#1a44cc' },
   '英語':   { bg: '#fffbe0', fg: '#998800' },
@@ -38,6 +41,17 @@ const SUBJECT_COLORS = {
   '世界史': { bg: '#f5eaff', fg: '#7722cc' },
   '情報':   { bg: '#e0faff', fg: '#0088aa' },
 };
+let SUBJECT_COLORS = loadSubjectColors();
+function loadSubjectColors() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SUBJECT_COLOR_KEY));
+    return saved ? { ...SUBJECT_COLORS_DEFAULT, ...saved } : { ...SUBJECT_COLORS_DEFAULT };
+  } catch(e) { return { ...SUBJECT_COLORS_DEFAULT }; }
+}
+function saveSubjectColors(obj) {
+  localStorage.setItem(SUBJECT_COLOR_KEY, JSON.stringify(obj));
+  SUBJECT_COLORS = { ...SUBJECT_COLORS_DEFAULT, ...obj };
+}
 const CUSTOM_COLOR  = { bg: '#ffeaf5', fg: '#cc2266', border: '#ffb3d9' };
 const DEFAULT_COLOR = { bg: '#f0f2f5', fg: '#6b7594', border: '#dde1ea' };
 
@@ -869,13 +883,25 @@ function buildColorPicker(rowId, palette, selectedVal, onSelect) {
   });
 }
 
+// 科目色を含む動的パレット生成
+function getDynamicFgPalette() {
+  const subjectFgs = [...new Set(Object.values(SUBJECT_COLORS).map(c => c.fg))];
+  return [null, ...subjectFgs, ...FG_PALETTE.filter(c => c && !subjectFgs.includes(c))];
+}
+function getDynamicBgPalette() {
+  const subjectBgs = [...new Set(Object.values(SUBJECT_COLORS).map(c => c.bg))];
+  return [null, ...subjectBgs, ...BG_PALETTE.filter(c => c && !subjectBgs.includes(c))];
+}
+
 function updateFmtUI() {
-  ['bold','underline','double-underline'].forEach(k => {
+  ['underline','double-underline'].forEach(k => {
     const btn = document.getElementById('fmt-' + k);
     if (btn) btn.classList.toggle('active', !!fmt[k]);
   });
-  buildColorPicker('color-fg-row', FG_PALETTE, fmt.fg, color => { fmt.fg = color; syncCustomColor('fg'); updateFmtUI(); });
-  buildColorPicker('color-bg-row', BG_PALETTE, fmt.bg, color => { fmt.bg = color; syncCustomColor('bg'); updateFmtUI(); });
+  const fgPalette = getDynamicFgPalette();
+  const bgPalette = getDynamicBgPalette();
+  buildColorPicker('color-fg-row', fgPalette, fmt.fg, color => { fmt.fg = color; syncCustomColor('fg'); updateFmtUI(); });
+  buildColorPicker('color-bg-row', bgPalette, fmt.bg, color => { fmt.bg = color; syncCustomColor('bg'); updateFmtUI(); });
 
   // カスタムカラー入力欄の値を同期
   syncCustomColor('fg');
@@ -917,7 +943,7 @@ function initFmtFromSubject(subject) {
 }
 function initFmtFromTask(task) {
   const f = task.format || {};
-  fmt.bold = !!f.bold; fmt.underline = !!f.underline; fmt['double-underline'] = !!f['double-underline'];
+  fmt.underline = !!f.underline; fmt['double-underline'] = !!f['double-underline'];
   fmt.fg = f.fg ?? null; fmt.bg = f.bg ?? null;
   updateFmtUI();
 }
@@ -984,12 +1010,22 @@ function openModal(id, dateStr) {
     document.getElementById('modal-delete').addEventListener('click', deleteTask);
   } else {
     document.getElementById('f-title').value   = '';
-    document.getElementById('f-remind').value  = '2';
-    document.getElementById('f-subject').value = 'なし';
-    document.getElementById('f-custom-subject').value = '';
-    document.getElementById('f-is-event').checked = false;
-    buildNotifTimesList(['07:00'], 'f-notif-time-group');
-    initFmtFromSubject('なし');
+    document.getElementById('f-remind').value  = taskDefault.remind  || '2';
+    document.getElementById('f-is-event').checked = !!taskDefault.isEvent;
+    // デフォルト教科
+    const defSubj = taskDefault.subject || 'なし';
+    const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
+    if (presets.includes(defSubj)) {
+      document.getElementById('f-subject').value = defSubj;
+      document.getElementById('custom-subject-group').style.display = 'none';
+    } else {
+      document.getElementById('f-subject').value = 'カスタム';
+      document.getElementById('f-custom-subject').value = defSubj;
+      document.getElementById('custom-subject-group').style.display = 'block';
+    }
+    document.getElementById('f-custom-subject').value = presets.includes(defSubj) ? '' : defSubj;
+    buildNotifTimesList([{ remind: 'none', time: '07:00' }], 'f-notif-time-group');
+    initFmtFromSubject(taskDefault.subject || 'なし');
     document.getElementById('modal-actions').innerHTML = `
       <button class="btn-primary" id="modal-save">保存する</button>
       <button class="btn-secondary" id="modal-cancel">キャンセル</button>`;
@@ -1029,7 +1065,7 @@ function saveTask() {
       : String(Math.max(...notifications.map(n => parseInt(n.remind) || 0))))
     : '0';
   const subject = getSubjectValue();
-  const format        = { bold:fmt.bold, underline:fmt.underline, 'double-underline':fmt['double-underline'], fg:fmt.fg, bg:fmt.bg };
+  const format        = { underline:fmt.underline, 'double-underline':fmt['double-underline'], fg:fmt.fg, bg:fmt.bg };
   if (editingId) {
     const i = tasks.findIndex(t => t.id === editingId);
     if (i >= 0) {
@@ -1123,6 +1159,18 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
   document.getElementById('settings-fav').addEventListener('click', () => {
     menu.classList.remove('open');
     openFavModal();
+  });
+
+  // デフォルト設定
+  document.getElementById('settings-default').addEventListener('click', () => {
+    menu.classList.remove('open');
+    openDefaultModal();
+  });
+
+  // 科目と色
+  document.getElementById('settings-subject-color').addEventListener('click', () => {
+    menu.classList.remove('open');
+    openSubjectColorModal();
   });
 
   // 通知設定
@@ -1468,6 +1516,115 @@ async function safeCacheClean() {
   }
   window.location.reload();
 }
+
+// ── デフォルト設定 ──
+let taskDefault = {};
+try { taskDefault = JSON.parse(localStorage.getItem(DEFAULT_KEY)) || {}; } catch(e) {}
+
+function openDefaultModal() {
+  const d = taskDefault;
+  document.getElementById('def-remind').value = d.remind || '2';
+  document.getElementById('def-is-event').checked = !!d.isEvent;
+  const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
+  if (d.subject && !presets.includes(d.subject)) {
+    document.getElementById('def-subject').value = 'カスタム';
+    document.getElementById('def-custom-subject').value = d.subject;
+    document.getElementById('def-custom-subject-group').style.display = 'block';
+  } else {
+    document.getElementById('def-subject').value = d.subject || 'なし';
+    document.getElementById('def-custom-subject-group').style.display = 'none';
+  }
+  document.getElementById('default-modal-overlay').classList.add('open');
+}
+
+window.handleDefSubjectChange = function(val) {
+  document.getElementById('def-custom-subject-group').style.display = val === 'カスタム' ? 'block' : 'none';
+};
+
+document.getElementById('default-save-btn').addEventListener('click', () => {
+  const subjEl  = document.getElementById('def-subject').value;
+  const subject = subjEl === 'カスタム'
+    ? (document.getElementById('def-custom-subject').value.trim() || 'カスタム')
+    : subjEl;
+  taskDefault = {
+    remind:  document.getElementById('def-remind').value,
+    isEvent: document.getElementById('def-is-event').checked,
+    subject,
+  };
+  localStorage.setItem(DEFAULT_KEY, JSON.stringify(taskDefault));
+  document.getElementById('default-modal-overlay').classList.remove('open');
+  showToast('デフォルトを保存しました ✓');
+});
+document.getElementById('default-cancel-btn').addEventListener('click', () => {
+  document.getElementById('default-modal-overlay').classList.remove('open');
+});
+document.getElementById('default-modal-close').addEventListener('click', () => {
+  document.getElementById('default-modal-overlay').classList.remove('open');
+});
+document.getElementById('default-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
+
+// ── 科目と色 ──
+const SUBJECT_LIST = ['国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
+
+function openSubjectColorModal() {
+  const list = document.getElementById('subject-color-list');
+  list.innerHTML = '';
+  SUBJECT_LIST.forEach(subj => {
+    const c    = SUBJECT_COLORS[subj] || SUBJECT_COLORS_DEFAULT[subj];
+    const row  = document.createElement('div'); row.className = 'subject-color-row';
+    const name = document.createElement('div'); name.className = 'subject-color-name'; name.textContent = subj;
+
+    const preview = document.createElement('span'); preview.className = 'subject-color-preview';
+    preview.textContent = subj;
+    preview.style.color = c.fg; preview.style.backgroundColor = c.bg;
+
+    const inputs = document.createElement('div'); inputs.className = 'subject-color-inputs';
+    const fgLabel = document.createElement('label'); fgLabel.textContent = '文字';
+    const fgIn = document.createElement('input'); fgIn.type = 'color'; fgIn.value = c.fg;
+    fgIn.dataset.subject = subj; fgIn.dataset.type = 'fg';
+    const bgLabel = document.createElement('label'); bgLabel.textContent = '背景';
+    const bgIn = document.createElement('input'); bgIn.type = 'color'; bgIn.value = c.bg;
+    bgIn.dataset.subject = subj; bgIn.dataset.type = 'bg';
+
+    // プレビューをリアルタイム更新
+    const updatePreviewEl = () => {
+      preview.style.color = fgIn.value;
+      preview.style.backgroundColor = bgIn.value;
+    };
+    fgIn.addEventListener('input', updatePreviewEl);
+    bgIn.addEventListener('input', updatePreviewEl);
+
+    inputs.appendChild(fgLabel); inputs.appendChild(fgIn);
+    inputs.appendChild(bgLabel); inputs.appendChild(bgIn);
+    row.appendChild(name); row.appendChild(preview); row.appendChild(inputs);
+    list.appendChild(row);
+  });
+  document.getElementById('subject-color-modal-overlay').classList.add('open');
+}
+
+document.getElementById('subject-color-save-btn').addEventListener('click', () => {
+  const customColors = {};
+  document.querySelectorAll('#subject-color-list .subject-color-inputs input[type="color"]').forEach(inp => {
+    const subj = inp.dataset.subject;
+    if (!customColors[subj]) customColors[subj] = { ...SUBJECT_COLORS_DEFAULT[subj] };
+    customColors[subj][inp.dataset.type] = inp.value;
+  });
+  saveSubjectColors(customColors);
+  document.getElementById('subject-color-modal-overlay').classList.remove('open');
+  render(); // タスク色を再描画
+  showToast('科目の色を保存しました ✓');
+});
+document.getElementById('subject-color-cancel-btn').addEventListener('click', () => {
+  document.getElementById('subject-color-modal-overlay').classList.remove('open');
+});
+document.getElementById('subject-color-modal-close').addEventListener('click', () => {
+  document.getElementById('subject-color-modal-overlay').classList.remove('open');
+});
+document.getElementById('subject-color-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
 
 // ── EVENTS ──
 document.getElementById('modal-overlay').addEventListener('click', function(e) {
