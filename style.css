@@ -605,6 +605,16 @@ header {
 .update-entry-changes { font-size: 13px; color: var(--text); line-height: 1.7; }
 .update-entry-changes li { margin-left: 16px; }
 
+/* 日付指定モードの通知行 */
+.notif-time-row .notif-date-input {
+  display: none; font-size: 13px; padding: 8px 6px;
+  min-width: 0;
+}
+.notif-time-row--date {
+  grid-template-columns: 0.75fr 0.75fr 1fr 44px;
+}
+.notif-time-row--date .notif-date-input { display: block; }
+
 /* ── 科目と色リスト ── */
 .subject-color-row {
   display: grid; grid-template-columns: 80px 1fr 1fr; gap: 8px;
