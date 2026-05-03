@@ -32,15 +32,15 @@
       <div id="settings-menu">
         <button class="settings-item" id="settings-notif">🔔 通知設定</button>
         <hr class="settings-divider">
-        <button class="settings-item" id="settings-fav">⭐ お気に入り設定</button>
+        <button class="settings-item" id="settings-default">🏠 デフォルト設定</button>
         <hr class="settings-divider">
-        <button class="settings-item" id="settings-default">📋 デフォルト設定</button>
+        <button class="settings-item" id="settings-fav">⭐ お気に入り設定</button>
         <hr class="settings-divider">
         <button class="settings-item" id="settings-subject-color">🎨 科目と色</button>
         <hr class="settings-divider">
-        <button class="settings-item" id="settings-cache">🔄 キャッシュをクリアして再読み込み</button>
-        <hr class="settings-divider">
         <button class="settings-item" id="settings-history">📋 バージョン履歴</button>
+        <hr class="settings-divider">
+        <button class="settings-item" id="settings-cache">🔄 キャッシュをクリアして再読み込み</button>
       </div>
     </div>
   </header>
@@ -197,8 +197,8 @@
     </div>
 
     <div class="setup-field">
-      <label>ユーザーID（変更する場合）</label>
-      <input type="text" id="setup-uid" placeholder="例: GIGAJI"
+      <label>ユーザーID</label>
+      <input type="text" id="setup-uid" placeholder="IDを入力"
         autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="1">
     </div>
 
@@ -351,25 +351,10 @@
 <div class="modal-overlay" id="default-modal-overlay">
   <div class="modal">
     <div class="modal-title">
-      <span>📋 デフォルト設定</span>
+      <span>🏠 デフォルト設定</span>
       <button class="modal-close" id="default-modal-close">✕</button>
     </div>
     <p style="font-size:13px;color:var(--text2);margin-bottom:14px;">追加画面を開いたときの初期値を設定します。</p>
-    <div class="form-group">
-      <label class="form-label">リマインド</label>
-      <select class="form-select" id="def-remind">
-        <option value="0">なし</option>
-        <option value="today">当日</option>
-        <option value="1">1日前</option>
-        <option value="2" selected>2日前</option>
-        <option value="3">3日前</option>
-        <option value="5">5日前</option>
-        <option value="7">7日前</option>
-        <option value="10">10日前</option>
-        <option value="14">2週間前</option>
-        <option value="30">30日前</option>
-      </select>
-    </div>
     <div class="form-group">
       <label class="event-checkbox-label">
         <input type="checkbox" id="def-is-event">
