@@ -1042,7 +1042,7 @@ function openModal(id, dateStr) {
     document.getElementById('modal-delete').addEventListener('click', deleteTask);
   } else {
     document.getElementById('f-title').value   = '';
-    document.getElementById('f-remind').value  = taskDefault.remind  || '2';
+    document.getElementById('f-remind').value  = taskDefault.remind || '2';
     document.getElementById('f-is-event').checked = !!taskDefault.isEvent;
     // デフォルト教科
     const defSubj = taskDefault.subject || 'なし';
@@ -1472,11 +1472,14 @@ async function checkVersion() {
     const latestVersion = versionLog[0].version;
     const savedVersion  = localStorage.getItem(VERSION_KEY);
 
+    if (!savedVersion) {
+      // 初回：バナーを出さず最新版をキャッシュに保存
+      localStorage.setItem(VERSION_KEY, latestVersion);
+      return;
+    }
+
     if (savedVersion !== latestVersion) {
-      // 未アップデートバージョンを絞り込む
-      const pendingVersions = savedVersion
-        ? versionLog.filter(e => e.version > savedVersion)
-        : versionLog;
+      const pendingVersions = versionLog.filter(e => e.version > savedVersion);
       showUpdateBanner(pendingVersions.length ? pendingVersions : versionLog);
     }
   } catch(e) {
@@ -1570,10 +1573,9 @@ try { taskDefault = JSON.parse(localStorage.getItem(DEFAULT_KEY)) || {}; } catch
 
 function openDefaultModal() {
   const d = taskDefault;
-  document.getElementById('def-remind').value = d.remind || '2';
   document.getElementById('def-is-event').checked = !!d.isEvent;
-  const presets = ['なし','カスタム',...subjectList.map(s=>s)];
-  if (d.subject && !['なし','カスタム',...subjectList].includes(d.subject)) {
+  const allSubjs = ['なし', ...subjectList, 'カスタム'];
+  if (d.subject && !allSubjs.includes(d.subject)) {
     document.getElementById('def-subject').value = 'カスタム';
     document.getElementById('def-custom-subject').value = d.subject;
     document.getElementById('def-custom-subject-group').style.display = 'block';
@@ -1581,7 +1583,6 @@ function openDefaultModal() {
     document.getElementById('def-subject').value = d.subject || 'なし';
     document.getElementById('def-custom-subject-group').style.display = 'none';
   }
-  // 通知時刻
   const defGroup = document.getElementById('def-notif-time-group');
   if (defGroup) {
     const initNotifs = Array.isArray(d.notifications) && d.notifications.length
@@ -1601,12 +1602,7 @@ document.getElementById('default-save-btn').addEventListener('click', () => {
     ? (document.getElementById('def-custom-subject').value.trim() || 'カスタム')
     : subjEl;
   const notifications = getFavNotifTimesFromGroup('def-notif-time-group');
-  taskDefault = {
-    remind:      document.getElementById('def-remind').value,
-    isEvent:     document.getElementById('def-is-event').checked,
-    subject,
-    notifications,
-  };
+  taskDefault = { isEvent: document.getElementById('def-is-event').checked, subject, notifications };
   localStorage.setItem(DEFAULT_KEY, JSON.stringify(taskDefault));
   document.getElementById('default-modal-overlay').classList.remove('open');
   showToast('デフォルトを保存しました ✓');
@@ -1643,78 +1639,153 @@ function renderSubjectColorList() {
   const list = document.getElementById('subject-color-list');
   list.innerHTML = '';
 
-  // 表示順：なし・カスタム・各科目（削除可能）
   const FIXED = ['なし', 'カスタム'];
-  const allSubjects = [...FIXED, ...subjectList];
 
-  allSubjects.forEach(subj => {
-    const isFixed = FIXED.includes(subj);
-    const c = subj === 'なし' ? DEFAULT_COLOR
-            : subj === 'カスタム' ? CUSTOM_COLOR
-            : (SUBJECT_COLORS[subj] || SUBJECT_COLORS_DEFAULT[subj] || { fg: '#333', bg: '#eee' });
-
-    const row  = document.createElement('div'); row.className = 'subject-color-row';
-    const name = document.createElement('div'); name.className = 'subject-color-name'; name.textContent = subj;
-
-    const preview = document.createElement('span'); preview.className = 'subject-color-preview';
-    preview.textContent = subj; preview.style.color = c.fg; preview.style.backgroundColor = c.bg;
-
-    const inputs = document.createElement('div'); inputs.className = 'subject-color-inputs';
-    const fgLabel = document.createElement('label'); fgLabel.textContent = '文字';
-    const fgIn = document.createElement('input'); fgIn.type = 'color'; fgIn.value = c.fg;
-    fgIn.dataset.subject = subj; fgIn.dataset.type = 'fg';
-    const bgLabel = document.createElement('label'); bgLabel.textContent = '背景';
-    const bgIn = document.createElement('input'); bgIn.type = 'color'; bgIn.value = c.bg;
-    bgIn.dataset.subject = subj; bgIn.dataset.type = 'bg';
-    const updatePreviewEl = () => { preview.style.color = fgIn.value; preview.style.backgroundColor = bgIn.value; };
-    fgIn.addEventListener('input', updatePreviewEl);
-    bgIn.addEventListener('input', updatePreviewEl);
-    inputs.appendChild(fgLabel); inputs.appendChild(fgIn);
-    inputs.appendChild(bgLabel); inputs.appendChild(bgIn);
-
-    row.appendChild(name); row.appendChild(preview); row.appendChild(inputs);
-
-    // 固定科目以外は×ボタン
-    if (!isFixed) {
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button'; delBtn.className = 'notif-time-remove-btn'; delBtn.textContent = '✕';
-      delBtn.style.marginLeft = '6px';
-      delBtn.addEventListener('click', () => {
-        if (!confirm(`「${subj}」を科目リストから削除しますか？\n既存のTODOはカスタム扱いになります。`)) return;
-        const newList = subjectList.filter(s => s !== subj);
-        saveSubjectList(newList);
-        // 既存タスク・お気に入りのsubject修正は保存時に行う（表示はそのまま）
-        renderSubjectColorList();
-        rebuildSubjectSelects();
-      });
-      row.appendChild(delBtn);
-    }
-
-    list.appendChild(row);
+  // なし・カスタム
+  FIXED.forEach(subj => {
+    const c = subj === 'なし' ? DEFAULT_COLOR : CUSTOM_COLOR;
+    list.appendChild(makeSubjectColorRow(subj, c, false));
   });
 
-  // 新しい科目を追加ボタン
-  if (!list.querySelector('.add-subject-row')) {
-    const addRow = document.createElement('div'); addRow.className = 'add-subject-row';
-    addRow.style.cssText = 'display:flex;gap:8px;margin-top:12px;align-items:center;';
-    const addInput = document.createElement('input'); addInput.type = 'text';
-    addInput.className = 'form-input'; addInput.placeholder = '新しい科目名';
-    addInput.style.flex = '1';
-    const addBtn = document.createElement('button'); addBtn.type = 'button';
-    addBtn.className = 'btn-primary'; addBtn.textContent = '追加';
-    addBtn.style.flexShrink = '0';
-    addBtn.addEventListener('click', () => {
-      const name = addInput.value.trim();
-      if (!name) { showToast('科目名を入力してください'); return; }
-      if (['なし','カスタム',...subjectList].includes(name)) { showToast('既に存在します'); return; }
-      saveSubjectList([...subjectList, name]);
-      addInput.value = '';
-      renderSubjectColorList();
-      rebuildSubjectSelects();
+  // 動的科目（並び替え可能）
+  subjectList.forEach(subj => {
+    const c = SUBJECT_COLORS[subj] || SUBJECT_COLORS_DEFAULT[subj] || { fg:'#333',bg:'#eee' };
+    list.appendChild(makeSubjectColorRow(subj, c, true));
+  });
+
+  // 新しい科目を追加
+  const addRow = document.createElement('div'); addRow.className = 'add-subject-row';
+  addRow.style.cssText = 'display:flex;gap:8px;margin-top:12px;align-items:center;';
+  const addInput = document.createElement('input'); addInput.type='text';
+  addInput.className='form-input'; addInput.placeholder='新しい科目名'; addInput.style.flex='1';
+  const addBtn = document.createElement('button'); addBtn.type='button';
+  addBtn.className='btn-primary'; addBtn.textContent='追加'; addBtn.style.flexShrink='0';
+  addBtn.addEventListener('click', () => {
+    const name = addInput.value.trim();
+    if (!name) { showToast('科目名を入力してください'); return; }
+    if (['なし','カスタム',...subjectList].includes(name)) { showToast('既に存在します'); return; }
+    saveSubjectList([...subjectList, name]);
+    addInput.value = '';
+    renderSubjectColorList();
+    rebuildSubjectSelects();
+  });
+  addRow.appendChild(addInput); addRow.appendChild(addBtn);
+  list.appendChild(addRow);
+
+  // ドラッグ並び替え初期化
+  initSubjectDragSort(list);
+}
+
+function makeSubjectColorRow(subj, c, isDraggable) {
+  const row = document.createElement('div'); row.className = 'subject-color-row';
+  row.dataset.subject = subj;
+
+  // ≡ハンドル（ドラッグ可能な科目のみ）
+  const handle = document.createElement('span'); handle.className = 'subject-color-handle';
+  handle.textContent = isDraggable ? '≡' : '　';
+  if (isDraggable) handle.setAttribute('draggable', 'false'); // JS側で制御
+  row.appendChild(handle);
+
+  const name = document.createElement('div'); name.className = 'subject-color-name'; name.textContent = subj;
+  row.appendChild(name);
+
+  const preview = document.createElement('span'); preview.className = 'subject-color-preview';
+  preview.textContent = subj; preview.style.color = c.fg; preview.style.backgroundColor = c.bg;
+  row.appendChild(preview);
+
+  const inputs = document.createElement('div'); inputs.className = 'subject-color-inputs';
+  const fgLabel = document.createElement('label'); fgLabel.textContent = '文字';
+  const fgIn = document.createElement('input'); fgIn.type='color'; fgIn.value=c.fg;
+  fgIn.dataset.subject=subj; fgIn.dataset.type='fg';
+  const bgLabel = document.createElement('label'); bgLabel.textContent = '背景';
+  const bgIn = document.createElement('input'); bgIn.type='color'; bgIn.value=c.bg;
+  bgIn.dataset.subject=subj; bgIn.dataset.type='bg';
+  const upd = () => { preview.style.color=fgIn.value; preview.style.backgroundColor=bgIn.value; };
+  fgIn.addEventListener('input', upd); bgIn.addEventListener('input', upd);
+  inputs.appendChild(fgLabel); inputs.appendChild(fgIn);
+  inputs.appendChild(bgLabel); inputs.appendChild(bgIn);
+  row.appendChild(inputs);
+
+  if (isDraggable) {
+    const delBtn = document.createElement('button');
+    delBtn.type='button'; delBtn.className='subject-color-del'; delBtn.textContent='✕';
+    delBtn.addEventListener('click', () => {
+      if (!confirm(`「${subj}」を削除しますか？`)) return;
+      saveSubjectList(subjectList.filter(s => s !== subj));
+      renderSubjectColorList(); rebuildSubjectSelects();
     });
-    addRow.appendChild(addInput); addRow.appendChild(addBtn);
-    list.appendChild(addRow);
+    row.appendChild(delBtn);
   }
+
+  return row;
+}
+
+// 科目色行のドラッグ並び替え
+function initSubjectDragSort(list) {
+  let dragSrc = null;
+  const getDraggableRows = () => Array.from(list.querySelectorAll('.subject-color-row[data-subject]'))
+    .filter(r => !['なし','カスタム'].includes(r.dataset.subject));
+
+  getDraggableRows().forEach(row => {
+    const handle = row.querySelector('.subject-color-handle');
+    if (!handle || handle.textContent.trim() === '') return;
+
+    // マウス
+    handle.addEventListener('mousedown', e => {
+      dragSrc = row; row.classList.add('dragging-subject');
+      e.preventDefault();
+    });
+
+    // タッチ
+    let touchY = 0;
+    handle.addEventListener('touchstart', e => {
+      dragSrc = row; row.classList.add('dragging-subject');
+      touchY = e.touches[0].clientY;
+    }, { passive: true });
+
+    handle.addEventListener('touchmove', e => {
+      if (!dragSrc) return;
+      const y = e.touches[0].clientY;
+      const target = document.elementFromPoint(e.touches[0].clientX, y)?.closest('.subject-color-row');
+      if (target && target !== dragSrc && !['なし','カスタム'].includes(target.dataset.subject)) {
+        const rows = getDraggableRows();
+        const srcIdx = rows.indexOf(dragSrc), tgtIdx = rows.indexOf(target);
+        if (srcIdx >= 0 && tgtIdx >= 0) {
+          if (srcIdx < tgtIdx) target.after(dragSrc);
+          else target.before(dragSrc);
+        }
+      }
+    }, { passive: true });
+
+    handle.addEventListener('touchend', () => {
+      if (dragSrc) { dragSrc.classList.remove('dragging-subject'); dragSrc = null; }
+      saveSubjectOrderFromDOM(list);
+    });
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragSrc) return;
+    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.subject-color-row');
+    if (target && target !== dragSrc && !['なし','カスタム'].includes(target.dataset.subject)) {
+      const rows = getDraggableRows();
+      const srcIdx = rows.indexOf(dragSrc), tgtIdx = rows.indexOf(target);
+      if (srcIdx >= 0 && tgtIdx >= 0) {
+        if (srcIdx < tgtIdx) target.after(dragSrc);
+        else target.before(dragSrc);
+      }
+    }
+  });
+  document.addEventListener('mouseup', () => {
+    if (dragSrc) { dragSrc.classList.remove('dragging-subject'); dragSrc = null; saveSubjectOrderFromDOM(list); }
+  });
+}
+
+function saveSubjectOrderFromDOM(list) {
+  const newOrder = Array.from(list.querySelectorAll('.subject-color-row[data-subject]'))
+    .map(r => r.dataset.subject)
+    .filter(s => !['なし','カスタム'].includes(s));
+  saveSubjectList(newOrder);
+  rebuildSubjectSelects();
 }
 
 document.getElementById('subject-color-save-btn').addEventListener('click', () => {
