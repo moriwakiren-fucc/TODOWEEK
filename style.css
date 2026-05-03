@@ -605,17 +605,14 @@ header {
 .update-entry-changes { font-size: 13px; color: var(--text); line-height: 1.7; }
 .update-entry-changes li { margin-left: 16px; }
 
-/* 日付指定モードの通知行 */
-.notif-time-row .notif-date-input {
-  display: none; font-size: 13px; padding: 8px 6px;
-  min-width: 0;
-}
-.notif-time-row--date {
-  grid-template-columns: 0.75fr 0.75fr 1fr 44px;
-}
-.notif-time-row--date .notif-date-input { display: block; }
-
 /* ── 科目と色リスト ── */
+#subject-color-list {
+  -webkit-user-select: none; user-select: none;
+}
+#subject-color-list input[type="color"],
+#subject-color-list input[type="text"] {
+  -webkit-user-select: auto; user-select: auto;
+}
 .subject-color-row {
   display: flex; gap: 6px;
   align-items: center; margin-bottom: 8px;
@@ -675,13 +672,31 @@ header {
 
 /* ── 複数通知リスト ── */
 .notif-times-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
-.notif-time-row {
+.notif-time-row { display: flex; flex-direction: column; gap: 6px; }
+/* 1段目: [remind select] [✕] */
+.notif-time-row-top {
   display: grid;
-  grid-template-columns: 0.75fr 1.25fr 44px;
+  grid-template-columns: 1fr 44px;
   gap: 6px; align-items: center;
 }
-.notif-time-row .time-select-row { display: flex; align-items: center; gap: 4px; }
+/* 2段目（通常）: 時刻のみ */
+.notif-time-row-bottom {
+  display: flex; align-items: center; gap: 4px;
+  padding-left: 0;
+}
+.notif-time-row-bottom .form-select { flex: 1; }
+/* 2段目（日付指定）: [date] [時刻] */
+.notif-time-row-bottom.has-date {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.notif-time-row-bottom.has-date .notif-date-input { width: 100%; font-size: 13px; }
+.notif-time-row-bottom.has-date .time-select-row { display: flex; gap: 4px; align-items: center; }
+.notif-time-row-bottom.has-date .time-select-row .form-select { flex: 1; }
+.notif-time-row .time-select-row { display: flex; align-items: center; gap: 4px; flex: 1; }
 .notif-time-row .time-select-row .form-select { flex: 1; }
+
 .notif-time-remove-btn {
   background: #fff0f3; color: var(--accent2); border: 1.5px solid #ffc8d6;
   border-radius: 10px; font-size: 16px; font-weight: 700;
@@ -698,6 +713,8 @@ header {
   padding: 10px 14px; cursor: pointer; width: 100%; transition: background 0.12s;
 }
 .notif-time-add-btn:hover { background: #d8e4ff; }
+/* 非表示だった古いnotif-date-inputルール（新構造では不要） */
+.notif-time-row--date { }
 
 /* ── お気に入りリスト ── */
 .fav-item {
