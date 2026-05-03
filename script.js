@@ -55,11 +55,12 @@ function saveSubjectColors(obj) {
 const CUSTOM_COLOR  = { bg: '#ffeaf5', fg: '#cc2266', border: '#ffb3d9' };
 const DEFAULT_COLOR = { bg: '#f0f2f5', fg: '#6b7594', border: '#dde1ea' };
 
-// 後方互換：旧notifTime文字列 / 旧notifTimes文字列配列 / 新notifications配列 → {remind, time}[] で返す
+// 後方互換：旧notifTime文字列 / 旧notifTimes文字列配列 / 新notifications配列 → {remind, time, date?}[] で返す
 function getNotifsArray(task) {
   // 新形式
-  if (Array.isArray(task.notifications) && task.notifications.length)
-    return task.notifications.filter(n => n && n.time && n.time !== 'none');
+  if (Array.isArray(task.notifications) && task.notifications.length) {
+    return task.notifications.filter(n => n && n.remind !== 'none' && (n.time || n.remind === 'date'));
+  }
   // 旧形式（notifTimes文字列配列）
   const taskRemind = task.remind && task.remind !== '0' ? task.remind : 'today';
   if (Array.isArray(task.notifTimes) && task.notifTimes.length)
@@ -613,7 +614,8 @@ function makeTaskEl(task, isOverdue = false) {
 
   // サブ情報行（教科＋リマインド）
   const hasSubject = task.subject && task.subject !== 'なし';
-  const hasRemind  = task.remind && task.remind !== '0';
+  const notifs    = getNotifsArray(task);
+  const hasRemind = notifs.length > 0 || (task.remind && task.remind !== '0');
   if (hasSubject || hasRemind) {
     const sub = document.createElement('div'); sub.className = 'task-sub-line';
     if (hasSubject) {
@@ -624,7 +626,6 @@ function makeTaskEl(task, isOverdue = false) {
       sub.appendChild(tag);
     }
     if (hasRemind) {
-      const notifs = getNotifsArray(task);
       const ri = document.createElement('div'); ri.className = 'remind-info';
       if (notifs.length) {
         ri.textContent = '⏰ ' + notifs.map(n => {
@@ -754,14 +755,15 @@ function buildNotifTimesList(selectedNotifs, groupId, isFavMode) {
 }
 
 function makeNotifTimeRow(notif, listId, isFirst, isFavMode) {
-  const safeRemind = notif.remind || 'today';
+  const safeRemind = notif.remind || (isFirst ? 'none' : 'today');
   const safeTime   = (notif.time && notif.time !== 'none') ? notif.time : '07:00';
-  const safeDate   = notif.date || getTodayStr(); // 日付指定用
+  const safeDate   = notif.date || getTodayStr();
+
   const row = document.createElement('div'); row.className = 'notif-time-row';
 
+  // ── 1段目: [リマインドセレクト] [✕] ──
+  const top = document.createElement('div'); top.className = 'notif-time-row-top';
   const options = isFavMode ? FAV_NOTIF_REMIND_OPTIONS : NOTIF_REMIND_OPTIONS;
-
-  // リマインド日セレクト
   const selRemind = document.createElement('select'); selRemind.className = 'form-select notif-remind-sel';
   options.forEach(opt => {
     if (!isFirst && opt.value === 'none') return;
@@ -769,6 +771,17 @@ function makeNotifTimeRow(notif, listId, isFirst, isFavMode) {
     if (opt.value === safeRemind) o.selected = true;
     selRemind.appendChild(o);
   });
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button'; removeBtn.className = 'notif-time-remove-btn'; removeBtn.textContent = '✕';
+  removeBtn.addEventListener('click', () => { row.remove(); if (listId) updateRemoveButtons(listId); });
+  top.appendChild(selRemind); top.appendChild(removeBtn);
+
+  // ── 2段目: 時刻（+日付指定時は日付input） ──
+  const bottom = document.createElement('div'); bottom.className = 'notif-time-row-bottom';
+
+  // 日付input（日付指定モード用）
+  const dateInput = document.createElement('input');
+  dateInput.type = 'date'; dateInput.className = 'form-input notif-date-input'; dateInput.value = safeDate;
 
   // 時刻セレクト
   const timeWrap = document.createElement('div'); timeWrap.className = 'time-select-row';
@@ -789,38 +802,24 @@ function makeNotifTimeRow(notif, listId, isFirst, isFavMode) {
   }
   timeWrap.appendChild(selH); timeWrap.appendChild(timeSep); timeWrap.appendChild(selM);
 
-  // 日付指定フィールド（date選択時のみ表示）
-  const dateInput = document.createElement('input');
-  dateInput.type = 'date'; dateInput.className = 'form-input notif-date-input';
-  dateInput.value = safeDate;
+  bottom.appendChild(dateInput);
+  bottom.appendChild(timeWrap);
 
-  const removeBtn = document.createElement('button');
-  removeBtn.type = 'button'; removeBtn.className = 'notif-time-remove-btn';
-  removeBtn.textContent = '✕';
-  removeBtn.addEventListener('click', () => { row.remove(); if (listId) updateRemoveButtons(listId); });
-
-  // 上段：セレクト＋（日付入力 or 空）＋時刻
-  // 下段は使わず、日付指定時はセレクトの右下に時刻を移動するため
-  // grid を 2行で実現: 1行目 = [remind sel] [date/空] [✕], 2行目 = [時刻 colspan]
-  row.appendChild(selRemind);
-  row.appendChild(dateInput);
-  row.appendChild(timeWrap);
-  row.appendChild(removeBtn);
-
-  // なし選択時は時刻を薄く
+  // 状態更新: none/date/通常
   const updateState = () => {
     const val = selRemind.value;
     const isNone = val === 'none';
     const isDate = val === 'date';
-    selH.disabled = isNone; selM.disabled = isNone;
-    timeWrap.style.opacity = isNone ? '0.35' : '1';
+    bottom.style.display = isNone ? 'none' : '';
+    bottom.classList.toggle('has-date', isDate);
     dateInput.style.display = isDate ? '' : 'none';
-    // 日付指定時はグリッドを2行に切り替え
-    row.classList.toggle('notif-time-row--date', isDate);
+    selH.disabled = false; selM.disabled = false;
   };
   selRemind.addEventListener('change', updateState);
   updateState();
 
+  row.appendChild(top);
+  row.appendChild(bottom);
   return row;
 }
 
@@ -840,10 +839,13 @@ function getNotifTimesFromGroup(gid) {
   const rows   = document.querySelectorAll(`#${listId} .notif-time-row`);
   return Array.from(rows)
     .map(row => {
-      const remind = row.querySelector('.notif-remind-sel').value;
-      const time   = row.querySelector('.time-select-h').value + ':' + row.querySelector('.time-select-m').value;
-      const dateEl = row.querySelector('.notif-date-input');
-      const date   = (remind === 'date' && dateEl) ? dateEl.value : undefined;
+      const remind  = row.querySelector('.notif-remind-sel').value;
+      const bottom  = row.querySelector('.notif-time-row-bottom');
+      const selH    = row.querySelector('.time-select-h');
+      const selM    = row.querySelector('.time-select-m');
+      const time    = selH && selM ? `${selH.value}:${selM.value}` : '07:00';
+      const dateEl  = row.querySelector('.notif-date-input');
+      const date    = (remind === 'date' && dateEl && dateEl.value) ? dateEl.value : undefined;
       return date ? { remind, time, date } : { remind, time };
     })
     .filter(n => n.remind !== 'none');
@@ -854,7 +856,7 @@ function getFavNotifTimesFromGroup(gid) {
   const rows   = document.querySelectorAll(`#${listId} .notif-time-row`);
   return Array.from(rows).map(row => ({
     remind: row.querySelector('.notif-remind-sel').value,
-    time:   row.querySelector('.time-select-h').value + ':' + row.querySelector('.time-select-m').value,
+    time:   (() => { const h=row.querySelector('.time-select-h'); const m=row.querySelector('.time-select-m'); return h&&m?`${h.value}:${m.value}`:'07:00'; })(),
   }));
 }
 
