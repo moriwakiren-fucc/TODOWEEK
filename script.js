@@ -1510,7 +1510,11 @@ function showUpdateModal(entries, isHistory) {
   }
   allEntries.forEach(entry => {
     const div = document.createElement('div'); div.className = 'update-entry';
-    const changesList = (entry.changes || []).map(c => `<li>${esc(c)}</li>`).join('');
+    const changesList = (entry.changes || []).map(c => {
+      // \n で改行対応（esc後に<br>変換）
+      const escaped = esc(c).replace(/\n/g, '<br>');
+      return `<li>${escaped}</li>`;
+    }).join('');
     div.innerHTML = `
       <div class="update-entry-version">${esc(entry.version)}</div>
       <div class="update-entry-date">${esc(entry.date)}</div>
@@ -1535,17 +1539,14 @@ document.getElementById('update-do-btn').addEventListener('click', () => {
 
 // ── 安全なキャッシュクリア（同期確認付き） ──
 async function safeCacheClean() {
-  // オフラインチェック
   if (!navigator.onLine) {
     alert('インターネットに接続してから再度お試しください');
     return;
   }
-  // 未ログインチェック
   if (!config.userId) {
     const ok = confirm('ログインされていないので、このまま進むと保存されたデータが全て失われますがよろしいですか？');
     if (!ok) return;
   } else {
-    // 同期を試みる
     showToast('同期中…');
     try {
       await pushToCloud();
@@ -1554,6 +1555,8 @@ async function safeCacheClean() {
       alert('インターネットに接続してから再度お試しください');
       return;
     }
+    // アップデート履歴をKVに記録
+    try { await recordUpdateHistory(); } catch(e) { console.warn('history record failed', e); }
   }
   showToast('キャッシュをクリア中…');
   try {
@@ -1565,12 +1568,27 @@ async function safeCacheClean() {
       const keys = await caches.keys();
       await Promise.all(keys.map(k => caches.delete(k)));
     }
-    // 最新バージョンを記録してからリロード
     if (versionLog.length) localStorage.setItem(VERSION_KEY, versionLog[0].version);
-  } catch(e) {
-    console.warn('Cache clear error:', e);
-  }
+  } catch(e) { console.warn('Cache clear error:', e); }
   window.location.reload();
+}
+
+// アップデート履歴をWorkerのKVに記録
+async function recordUpdateHistory() {
+  if (!config.userId || !navigator.onLine) return;
+  // 端末識別子（SUB_KEYに保存されているendpointか、なければUUID生成）
+  let deviceId = localStorage.getItem('todoweek_device_id_v1');
+  if (!deviceId) {
+    deviceId = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    localStorage.setItem('todoweek_device_id_v1', deviceId);
+  }
+  const now = new Date();
+  const ts  = `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  await fetch(`${WORKER_URL}/update-history/${config.userId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId, timestamp: ts }),
+  });
 }
 
 // ── デフォルト設定 ──
