@@ -1481,7 +1481,11 @@ async function checkVersion() {
     }
 
     if (savedVersion !== latestVersion) {
-      const pendingVersions = versionLog.filter(e => e.version > savedVersion);
+      // savedVersion より新しいもの（配列先頭が最新なので先頭から savedVersion の直前まで）
+      const savedIdx = versionLog.findIndex(e => e.version === savedVersion);
+      const pendingVersions = savedIdx >= 0
+        ? versionLog.slice(0, savedIdx)   // savedVersion より新しいエントリのみ
+        : versionLog;                      // savedVersion が見つからない場合は全件
       showUpdateBanner(pendingVersions.length ? pendingVersions : versionLog);
     }
   } catch(e) {
