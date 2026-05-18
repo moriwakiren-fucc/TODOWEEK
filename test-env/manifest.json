@@ -1,0 +1,16 @@
+{
+  "name": "TodoRemind",
+  "short_name": "TodoRemind",
+  "start_url": "/TODOWEEK/",
+  "scope": "/TODOWEEK/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
