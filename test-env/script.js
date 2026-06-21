@@ -9,6 +9,8 @@ const VERSION_KEY       = 'todoweek_version_v1';
 const DEFAULT_KEY       = 'todoweek_default_v1';
 const SUBJECT_COLOR_KEY = 'todoweek_subject_colors_v1';
 const VERSION_URL       = 'https://moriwakiren-fucc.github.io/TODOWEEK/version.json';
+const IMPORTED_CAL_KEY  = 'todoweek_imported_calendars_v1'; // カレンダーのメタ情報（id,url,name,fg,bg,visible）
+const CAL_VIS_KEY       = 'todoweek_calendar_visibility_v1'; // {todo: true, [calId]: true/false}
 
 // ── STATE ──
 let config = {};
@@ -27,6 +29,20 @@ let cachedVapidKey = null;
 // ── 月間レイアウト STATE ──
 let viewMode      = 'week'; // 'week' | 'month'
 let monthCursor   = null;   // 表示中の月の1日（Dateオブジェクト、表示専用）
+const WEEK_START_KEY = 'todoweek_week_start_v1'; // 'sun' | 'mon'
+let weekStart = localStorage.getItem(WEEK_START_KEY) || 'sun';
+function saveWeekStart(v) { weekStart = v; localStorage.setItem(WEEK_START_KEY, v); }
+
+// ── インポートカレンダー STATE ──
+// importedCalendars: [{ id, url, name, fg, bg }]
+// importedEvents: { [calId]: [{ title, date, allDay }] }  ※展開済みイベント（icsパース結果のキャッシュ、保存しない）
+let importedCalendars = [];
+try { importedCalendars = JSON.parse(localStorage.getItem(IMPORTED_CAL_KEY)) || []; } catch(e) {}
+let importedEvents = {}; // メモリ内キャッシュのみ（永続化しない、毎回再取得）
+let calVisibility = { todo: true };
+try { calVisibility = { todo: true, ...(JSON.parse(localStorage.getItem(CAL_VIS_KEY)) || {}) }; } catch(e) {}
+function saveImportedCalendars() { localStorage.setItem(IMPORTED_CAL_KEY, JSON.stringify(importedCalendars)); }
+function saveCalVisibility() { localStorage.setItem(CAL_VIS_KEY, JSON.stringify(calVisibility)); }
 
 // ── FORMAT STATE ──
 let fmt = { bold: false, underline: false, 'double-underline': false, fg: null, bg: null };
@@ -183,6 +199,107 @@ function getTodayStr() { return toDateStr(new Date()); }
 function genId() { return Math.random().toString(36).slice(2,9) + Date.now().toString(36); }
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+// ── ICAL PARSER ──
+// 簡易iCalendar(.ics)パーサー。VEVENTのSUMMARY/DTSTART/RRULE(簡易対応)を読み取る。
+// 戻り値: { calName, events: [{ title, date }] }  ※date='YYYY-MM-DD'（終日・時刻ありとも日付のみ扱う）
+function parseICalText(text) {
+  // 折り返し行（行頭スペース/タブ）を結合
+  const unfolded = text.replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '');
+  const lines = unfolded.split('\n').map(l => l.replace(/\r$/, '')).filter(l => l.length);
+
+  let calName = '';
+  const rawEvents = [];
+  let cur = null;
+
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') { cur = {}; continue; }
+    if (line === 'END:VEVENT') { if (cur) rawEvents.push(cur); cur = null; continue; }
+    const idx = line.indexOf(':');
+    if (idx < 0) continue;
+    const left  = line.slice(0, idx);
+    const value = line.slice(idx + 1);
+    const key   = left.split(';')[0].toUpperCase();
+
+    if (!cur) {
+      if (key === 'X-WR-CALNAME' || (key === 'NAME' && !calName)) calName = unescapeICalText(value);
+      continue;
+    }
+    if (key === 'SUMMARY')      cur.title = unescapeICalText(value);
+    else if (key === 'DTSTART') { cur.dtstart = value; cur.dtstartParams = left; }
+    else if (key === 'RRULE')   cur.rrule = value;
+    else if (key === 'UID')     cur.uid = value;
+  }
+
+  // DTSTARTをYYYY-MM-DDに正規化する
+  function parseDateOnly(val) {
+    // "20260415" or "20260415T070000Z" or "20260415T070000"
+    const m = val.match(/^(\d{4})(\d{2})(\d{2})/);
+    if (!m) return null;
+    return `${m[1]}-${m[2]}-${m[3]}`;
+  }
+  function dateStrToDate(ds) {
+    const [y,m,d] = ds.split('-').map(Number);
+    return new Date(y, m-1, d);
+  }
+
+  // 表示対象期間：前後18か月（週・月レイアウトの移動範囲を十分カバー）
+  const today = new Date(); today.setHours(0,0,0,0);
+  const rangeStart = new Date(today.getFullYear(), today.getMonth() - 18, 1);
+  const rangeEnd   = new Date(today.getFullYear(), today.getMonth() + 18, 1);
+
+  const events = [];
+  rawEvents.forEach(ev => {
+    if (!ev.dtstart || !ev.title) return;
+    const baseDateStr = parseDateOnly(ev.dtstart);
+    if (!baseDateStr) return;
+    const baseDate = dateStrToDate(baseDateStr);
+
+    if (!ev.rrule) {
+      if (baseDate >= rangeStart && baseDate <= rangeEnd) events.push({ title: ev.title, date: baseDateStr });
+      return;
+    }
+    // RRULE簡易展開（FREQ=DAILY/WEEKLY/MONTHLY/YEARLY、INTERVAL、COUNT、UNTILのみ対応）
+    const ruleParts = {};
+    ev.rrule.split(';').forEach(p => { const [k,v] = p.split('='); if (k) ruleParts[k.toUpperCase()] = v; });
+    const freq     = ruleParts.FREQ;
+    const interval = parseInt(ruleParts.INTERVAL || '1', 10) || 1;
+    const count    = ruleParts.COUNT ? parseInt(ruleParts.COUNT, 10) : null;
+    let until = null;
+    if (ruleParts.UNTIL) { const u = parseDateOnly(ruleParts.UNTIL); if (u) until = dateStrToDate(u); }
+
+    if (!freq) {
+      if (baseDate >= rangeStart && baseDate <= rangeEnd) events.push({ title: ev.title, date: baseDateStr });
+      return;
+    }
+
+    let d = new Date(baseDate);
+    let n = 0;
+    const MAX_OCC = 2000; // 安全弁（無限ループ防止）
+    while (n < MAX_OCC) {
+      if (until && d > until) break;
+      if (d > rangeEnd) break;
+      if (count && n >= count) break;
+      if (d >= rangeStart && d <= rangeEnd) events.push({ title: ev.title, date: toDateStr(d) });
+      n++;
+      if (freq === 'DAILY')        d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + interval);
+      else if (freq === 'WEEKLY')  d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * interval);
+      else if (freq === 'MONTHLY') d = new Date(d.getFullYear(), d.getMonth() + interval, d.getDate());
+      else if (freq === 'YEARLY')  d = new Date(d.getFullYear() + interval, d.getMonth(), d.getDate());
+      else break; // 未対応FREQは展開しない
+    }
+  });
+
+  return { calName, events };
+}
+
+function unescapeICalText(s) {
+  return String(s)
+    .replace(/\\n/gi, ' ')
+    .replace(/\\,/g, ',')
+    .replace(/\\;/g, ';')
+    .replace(/\\\\/g, '\\');
+}
+
 // ── SYNC ──
 const PENDING_KEY = 'todoweek_pending_sync'; // オフライン中の未同期フラグ
 
@@ -207,7 +324,7 @@ async function pushToCloud() {
     });
     if (!r.ok) throw new Error(r.status);
     localStorage.removeItem(PENDING_KEY);
-    setSyncUI('ok', '同期済み ✓');
+    setSyncUI('ok', '同期済み');
   } catch(e) {
     localStorage.setItem(PENDING_KEY, '1');
     setSyncUI('err', 'エラー');
@@ -236,10 +353,12 @@ async function pullFromCloud() {
         localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
       }
     }
-    setSyncUI('ok', '同期済み ✓');
+    setSyncUI('ok', '同期済み');
     await pullFavoritesFromCloud();
     await pullSubjectSettingsFromCloud();
+    await pullImportedCalendarsFromCloud();
     render();
+    refreshAllImportedEvents();
   } catch(e) {
     setSyncUI('err', 'エラー');
     render(); // エラーでもローカルデータで表示
@@ -569,8 +688,11 @@ function render() {
       const ds  = toDateStr(d); const dow = d.getDay(); const hol = isHoliday(ds);
       const col = document.createElement('div'); col.className = 'col-body';
       if (ds === todayStr) col.classList.add('today-col');
-      sortTasksForDate(tasks.filter(t => t.date === ds))
-        .forEach(t => col.appendChild(makeTaskEl(t)));
+      if (calVisibility.todo !== false) {
+        sortTasksForDate(tasks.filter(t => t.date === ds))
+          .forEach(t => col.appendChild(makeTaskEl(t)));
+      }
+      getImportedEventsForDate(ds).forEach(ev => col.appendChild(makeImportedTaskEl(ev, false)));
       const btn = document.createElement('button');
       btn.className = 'new-btn'; btn.textContent = '＋';
       btn.addEventListener('click', () => openModal(null, ds));
@@ -605,7 +727,9 @@ function getMonthDates(monthDate) {
   const year  = monthDate.getFullYear();
   const month = monthDate.getMonth();
   const firstDay      = new Date(year, month, 1);
-  const startWeekday  = firstDay.getDay(); // 日曜=0始まり
+  const startOffset    = weekStart === 'mon' ? 1 : 0; // 月曜始まりなら月曜=0扱いにするオフセット
+  const firstDow       = firstDay.getDay(); // 0=日,1=月,...
+  const startWeekday   = (firstDow - startOffset + 7) % 7; // グリッド先頭からfirstDayまでの日数
   const gridStart     = new Date(firstDay);
   gridStart.setDate(firstDay.getDate() - startWeekday);
   // 6週間分（42日）を表示。最終週がその月の日を含まない場合は5週間に削れる
@@ -625,7 +749,7 @@ function renderMonth() {
   const month    = monthCursor.getMonth();
   const dates    = getMonthDates(monthCursor);
 
-  // ── ヘッダー（＜ 年月 ＞ ＋ 曜日行） ──
+  // ── ヘッダー（＜ 年月 ＞ ＋ 週開始曜日トグル ＋ 曜日行） ──
   const headerWrap = document.getElementById('month-header-wrap');
   if (headerWrap) {
     headerWrap.innerHTML = '';
@@ -649,11 +773,24 @@ function renderMonth() {
       });
       nav.appendChild(prevBtn); nav.appendChild(label); nav.appendChild(nextBtn);
       goalWrap.appendChild(nav);
+
+      // 週開始曜日トグル
+      const toggle = document.createElement('div'); toggle.className = 'month-week-start-toggle';
+      const sunBtn = document.createElement('button');
+      sunBtn.textContent = '日曜始まり'; sunBtn.className = weekStart === 'sun' ? 'active' : '';
+      sunBtn.addEventListener('click', () => { saveWeekStart('sun'); render(); });
+      const monBtn = document.createElement('button');
+      monBtn.textContent = '月曜始まり'; monBtn.className = weekStart === 'mon' ? 'active' : '';
+      monBtn.addEventListener('click', () => { saveWeekStart('mon'); render(); });
+      toggle.appendChild(sunBtn); toggle.appendChild(monBtn);
+      goalWrap.appendChild(toggle);
     }
-    // 曜日行
-    DAY.forEach((d, i) => {
+    // 曜日行（週開始曜日に応じて並び替え）
+    const dayLabels = weekStart === 'mon' ? [...DAY.slice(1), DAY[0]] : DAY;
+    dayLabels.forEach((d) => {
+      const originalIdx = DAY.indexOf(d);
       const cell = document.createElement('div');
-      cell.className = 'month-header-cell' + (i === 0 ? ' sun-col' : i === 6 ? ' sat-col' : '');
+      cell.className = 'month-header-cell' + (originalIdx === 0 ? ' sun-col' : originalIdx === 6 ? ' sat-col' : '');
       cell.textContent = d;
       headerWrap.appendChild(cell);
     });
@@ -683,15 +820,26 @@ function renderMonth() {
       else if (dow === 6) dayNumCls += ' sat-day';
     }
     dayNum.className = dayNumCls;
-    dayNum.textContent = d.getDate();
+    const numSpan = document.createElement('span');
+    numSpan.className = 'month-cell-daynum-num'; numSpan.textContent = d.getDate();
+    dayNum.appendChild(numSpan);
+    if (!isOtherMonth && hol) {
+      const holSpan = document.createElement('span');
+      holSpan.className = 'month-cell-daynum-holname';
+      holSpan.textContent = HOLIDAY_MAP[ds] || '';
+      dayNum.appendChild(holSpan);
+    }
     cell.appendChild(dayNum);
 
     const taskWrap = document.createElement('div');
     taskWrap.className = 'month-cell-tasks';
     cell.appendChild(taskWrap);
 
-    const dayTasks = sortTasksForDate(tasks.filter(t => t.date === ds));
+    const dayTasks = calVisibility.todo !== false ? sortTasksForDate(tasks.filter(t => t.date === ds)) : [];
     dayTasks.forEach(t => taskWrap.appendChild(makeMonthTaskEl(t)));
+    const dayImported = getImportedEventsForDate(ds);
+    dayImported.forEach(ev => taskWrap.appendChild(makeImportedTaskEl(ev, true)));
+    const totalCount = dayTasks.length + dayImported.length;
 
     // クリックでその日始まりの週レイアウトへ
     cell.addEventListener('click', () => {
@@ -704,8 +852,27 @@ function renderMonth() {
     gridWrap.appendChild(cell);
 
     // ── 枠の高さに収まらない分は「…その他n件」表示（描画後に判定） ──
-    requestAnimationFrame(() => fitMonthCellTasks(cell, taskWrap, dayTasks.length));
+    requestAnimationFrame(() => {
+      shrinkHolidayLabelToFit(dayNum);
+      fitMonthCellTasks(cell, taskWrap, totalCount);
+    });
   });
+}
+
+// 祝日名のフォントサイズを、1行に収まるまで縮小する
+function shrinkHolidayLabelToFit(dayNumEl) {
+  const holSpan = dayNumEl.querySelector('.month-cell-daynum-holname');
+  if (!holSpan) return;
+  let size = 11; // 初期フォントサイズ(px)
+  holSpan.style.fontSize = size + 'px';
+  let guard = 0;
+  while (dayNumEl.scrollWidth > dayNumEl.clientWidth && size > 6 && guard < 20) {
+    size -= 0.5;
+    holSpan.style.fontSize = size + 'px';
+    guard++;
+  }
+  // それでも収まらない極小幅の場合は祝日名を非表示（数字のみ表示）にする
+  if (dayNumEl.scrollWidth > dayNumEl.clientWidth) holSpan.style.display = 'none';
 }
 
 function makeMonthTaskEl(task) {
@@ -719,9 +886,23 @@ function makeMonthTaskEl(task) {
   let td = ''; if (f.underline) td = 'underline'; else if (f['double-underline']) td = 'underline double';
   div.style.textDecoration = td;
   div.style.fontWeight = '600';
+  div.style.display = 'flex'; div.style.alignItems = 'center'; div.style.gap = '3px';
+
+  if (!task.isEvent) {
+    const cb = document.createElement('span');
+    cb.className = 'month-task-cb' + (task.done ? ' checked' : '');
+    cb.style.cssText = `display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:10px;height:10px;border-radius:3px;border:1.5px solid ${effectiveFg};${task.done ? `background:${effectiveFg};` : ''}`;
+    if (task.done) {
+      cb.innerHTML = `<span style="color:#fff;font-size:7px;line-height:1;">✓</span>`;
+    }
+    div.appendChild(cb);
+  }
 
   const hasSubject = task.subject && task.subject !== 'なし';
-  div.textContent = hasSubject ? `${task.subject} ${task.title}` : task.title;
+  const textSpan = document.createElement('span');
+  textSpan.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;';
+  textSpan.textContent = hasSubject ? `${task.subject} ${task.title}` : task.title;
+  div.appendChild(textSpan);
   return div;
 }
 
@@ -1076,8 +1257,9 @@ function updateNotifTimeVisibility(gid) {
 }
 function renderOverdue() {
   const todayStr = getTodayStr();
-  const od = tasks.filter(t => !t.done && !t.isEvent && t.date < todayStr);
   const sec = document.getElementById('overdue-section');
+  if (calVisibility.todo === false) { sec.classList.add('hidden'); return; }
+  const od = tasks.filter(t => !t.done && !t.isEvent && t.date < todayStr);
   if (!od.length) { sec.classList.add('hidden'); return; }
   sec.classList.remove('hidden');
   if (overdueOpen) {
@@ -1423,6 +1605,20 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
     }
     updateMonthMenuLabel();
     render();
+  });
+
+  // 他のカレンダーアプリから追加
+  const calImportBtn = document.getElementById('settings-calendar-import');
+  if (calImportBtn) calImportBtn.addEventListener('click', () => {
+    menu.classList.remove('open');
+    openCalImportModal();
+  });
+
+  // 表示するカレンダー
+  const calVisBtn = document.getElementById('settings-calendar-visibility');
+  if (calVisBtn) calVisBtn.addEventListener('click', () => {
+    menu.classList.remove('open');
+    openCalVisibilityModal();
   });
 
   // 通知設定
@@ -2101,6 +2297,300 @@ function rebuildSubjectSelects() {
     if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
   });
 }
+// ── インポートカレンダー：クラウド同期 ──
+async function pushImportedCalendarsToCloud() {
+  if (!config.userId || !navigator.onLine) return;
+  try {
+    await fetch(`${WORKER_URL}/imported-calendars/${config.userId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(importedCalendars),
+    });
+  } catch(e) { console.warn('imported calendars push failed', e); }
+}
+async function pullImportedCalendarsFromCloud() {
+  if (!config.userId || !navigator.onLine) return;
+  try {
+    const r = await fetch(`${WORKER_URL}/imported-calendars/${config.userId}`);
+    if (!r.ok) return;
+    const data = await r.json();
+    if (Array.isArray(data)) {
+      importedCalendars = data;
+      saveImportedCalendars();
+      // 表示設定に新規カレンダー分のデフォルト(true)を補完
+      importedCalendars.forEach(c => { if (!(c.id in calVisibility)) calVisibility[c.id] = true; });
+      saveCalVisibility();
+    }
+  } catch(e) { console.warn('imported calendars pull failed', e); }
+}
+function scheduleImportedCalendarsSync() {
+  clearTimeout(window._importedCalSyncTimer);
+  window._importedCalSyncTimer = setTimeout(pushImportedCalendarsToCloud, 1200);
+}
+
+// ── インポートカレンダー：ICS取得＆キャッシュ更新 ──
+async function fetchCalendarIcs(url) {
+  const proxyUrl = `${WORKER_URL}/ical-proxy?url=${encodeURIComponent(url)}`;
+  const r = await fetch(proxyUrl);
+  if (!r.ok) {
+    const msg = await r.text().catch(() => '');
+    throw new Error(msg || `HTTP ${r.status}`);
+  }
+  return await r.text();
+}
+
+// 全インポート済みカレンダーのイベントを再取得してimportedEventsに格納
+async function refreshAllImportedEvents() {
+  if (!navigator.onLine || !importedCalendars.length) return;
+  await Promise.all(importedCalendars.map(async cal => {
+    try {
+      const text = await fetchCalendarIcs(cal.url);
+      const { events } = parseICalText(text);
+      importedEvents[cal.id] = events;
+    } catch(e) {
+      console.warn('calendar refresh failed:', cal.name, e);
+      // 取得失敗時は前回キャッシュを維持（importedEventsを書き換えない）
+    }
+  }));
+  if (viewMode === 'month' || viewMode === 'week') render();
+}
+
+// 指定日のインポートイベントを{calId, title, fg, bg}形式で返す（表示ON のもののみ）
+function getImportedEventsForDate(ds) {
+  const result = [];
+  importedCalendars.forEach(cal => {
+    if (calVisibility[cal.id] === false) return;
+    const evs = importedEvents[cal.id] || [];
+    evs.forEach(ev => {
+      if (ev.date === ds) result.push({ calId: cal.id, calName: cal.name, title: ev.title, fg: cal.fg, bg: cal.bg });
+    });
+  });
+  return result;
+}
+
+function makeImportedTaskEl(ev, isMonth) {
+  const div = document.createElement('div');
+  div.className = isMonth ? 'month-task-item' : 'task-item task-item--imported is-event';
+  if (isMonth) {
+    div.style.background = ev.bg; div.style.color = ev.fg; div.style.fontWeight = '600';
+    div.textContent = `${ev.calName} ${ev.title}`;
+  } else {
+    div.style.background = ev.bg; div.style.borderColor = ev.fg;
+    const lbl = document.createElement('div'); lbl.className = 'task-label';
+    const titleEl = document.createElement('div'); titleEl.className = 'task-title-line';
+    titleEl.textContent = ev.title; titleEl.style.color = ev.fg; titleEl.style.fontWeight = '600';
+    lbl.appendChild(titleEl);
+    const sub = document.createElement('div'); sub.className = 'task-sub-line';
+    const tag = document.createElement('span'); tag.className = 'subject-tag';
+    tag.textContent = ev.calName; tag.style.color = ev.fg; tag.style.border = `1.5px solid ${ev.fg}`;
+    sub.appendChild(tag);
+    lbl.appendChild(sub);
+    div.appendChild(lbl);
+  }
+  div.addEventListener('click', e => {
+    e.stopPropagation();
+    showReadonlyToast();
+  });
+  return div;
+}
+
+function showReadonlyToast() {
+  const t = document.getElementById('readonly-toast');
+  if (!t) return;
+  t.classList.add('show');
+  clearTimeout(window._readonlyToastTimer);
+  window._readonlyToastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+// ── カレンダーインポートモーダル ──
+let calImportFetchedText = null;
+let calImportFetchedName = '';
+let calImportFmt = { fg: '#1a44cc', bg: '#e8f0ff' };
+
+function openCalImportModal() {
+  document.getElementById('cal-import-step1').style.display = '';
+  document.getElementById('cal-import-step2').style.display = 'none';
+  document.getElementById('cal-import-url').value = '';
+  document.getElementById('cal-import-error').style.display = 'none';
+  document.getElementById('cal-import-fetch-btn').disabled = true;
+  calImportFetchedText = null;
+  document.getElementById('cal-import-modal-overlay').classList.add('open');
+}
+
+document.getElementById('cal-import-url').addEventListener('input', e => {
+  document.getElementById('cal-import-fetch-btn').disabled = !e.target.value.trim();
+});
+
+document.getElementById('cal-import-fetch-btn').addEventListener('click', async () => {
+  const url = document.getElementById('cal-import-url').value.trim();
+  if (!url) return;
+  const errBox = document.getElementById('cal-import-error');
+  const btn = document.getElementById('cal-import-fetch-btn');
+  errBox.style.display = 'none';
+  btn.disabled = true; btn.textContent = '取得中…';
+  try {
+    const text = await fetchCalendarIcs(url);
+    const { calName, events } = parseICalText(text);
+    if (!events.length && !calName) throw new Error('カレンダーデータを読み取れませんでした');
+    calImportFetchedText = text;
+    calImportFetchedName = calName || 'インポートカレンダー';
+    document.getElementById('cal-import-name').value = calImportFetchedName;
+    calImportFmt = { fg: '#1a44cc', bg: '#e8f0ff' };
+    renderCalImportColorPickers();
+    document.getElementById('cal-import-step1').style.display = 'none';
+    document.getElementById('cal-import-step2').style.display = '';
+  } catch(e) {
+    errBox.textContent = '取得に失敗しました: ' + e.message;
+    errBox.style.display = 'block';
+  }
+  btn.disabled = false; btn.textContent = 'インポート';
+});
+
+function renderCalImportColorPickers() {
+  buildColorPicker('cal-import-fg-row', FG_PALETTE.filter(c => c !== null), calImportFmt.fg, color => {
+    calImportFmt.fg = color; document.getElementById('cal-import-fg-custom').value = color; renderCalImportColorPickers();
+  });
+  buildColorPicker('cal-import-bg-row', BG_PALETTE.filter(c => c !== null), calImportFmt.bg, color => {
+    calImportFmt.bg = color; document.getElementById('cal-import-bg-custom').value = color; renderCalImportColorPickers();
+  });
+}
+document.getElementById('cal-import-fg-custom').addEventListener('input', e => { calImportFmt.fg = e.target.value; renderCalImportColorPickers(); });
+document.getElementById('cal-import-bg-custom').addEventListener('input', e => { calImportFmt.bg = e.target.value; renderCalImportColorPickers(); });
+
+document.getElementById('cal-import-save-btn').addEventListener('click', async () => {
+  const name = document.getElementById('cal-import-name').value.trim() || calImportFetchedName || 'インポートカレンダー';
+  const url  = document.getElementById('cal-import-url').value.trim();
+  const id   = genId();
+  const cal  = { id, url, name, fg: calImportFmt.fg, bg: calImportFmt.bg };
+  importedCalendars.push(cal);
+  saveImportedCalendars();
+  calVisibility[id] = true;
+  saveCalVisibility();
+  if (calImportFetchedText) {
+    const { events } = parseICalText(calImportFetchedText);
+    importedEvents[id] = events;
+  }
+  scheduleImportedCalendarsSync();
+  document.getElementById('cal-import-modal-overlay').classList.remove('open');
+  render();
+  showToast('カレンダーを追加しました ✓');
+});
+document.getElementById('cal-import-cancel-btn').addEventListener('click', () => {
+  document.getElementById('cal-import-modal-overlay').classList.remove('open');
+});
+document.getElementById('cal-import-back-btn').addEventListener('click', openCalImportModal);
+document.getElementById('cal-import-modal-close').addEventListener('click', () => {
+  document.getElementById('cal-import-modal-overlay').classList.remove('open');
+});
+document.getElementById('cal-import-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
+
+// ── 表示するカレンダー モーダル ──
+function openCalVisibilityModal() {
+  renderCalVisibilityList();
+  document.getElementById('cal-visibility-modal-overlay').classList.add('open');
+}
+function renderCalVisibilityList() {
+  const list = document.getElementById('cal-visibility-list');
+  list.innerHTML = '';
+
+  const todoRow = document.createElement('div'); todoRow.className = 'cal-vis-row';
+  const todoCb  = document.createElement('input'); todoCb.type = 'checkbox';
+  todoCb.checked = calVisibility.todo !== false;
+  todoCb.addEventListener('change', () => { calVisibility.todo = todoCb.checked; saveCalVisibility(); render(); });
+  const todoName = document.createElement('div'); todoName.className = 'cal-vis-name'; todoName.textContent = 'TODO';
+  const todoSwatch = document.createElement('div'); todoSwatch.className = 'cal-vis-swatch'; todoSwatch.style.background = 'var(--accent)';
+  todoRow.appendChild(todoCb); todoRow.appendChild(todoName); todoRow.appendChild(todoSwatch);
+  list.appendChild(todoRow);
+
+  importedCalendars.forEach(cal => {
+    const row = document.createElement('div'); row.className = 'cal-vis-row';
+    const cb = document.createElement('input'); cb.type = 'checkbox';
+    cb.checked = calVisibility[cal.id] !== false;
+    cb.addEventListener('change', () => { calVisibility[cal.id] = cb.checked; saveCalVisibility(); render(); });
+    const name = document.createElement('div'); name.className = 'cal-vis-name'; name.textContent = cal.name;
+    const swatch = document.createElement('div'); swatch.className = 'cal-vis-swatch'; swatch.style.background = cal.bg;
+    swatch.title = '編集';
+    swatch.addEventListener('click', () => openCalEditModal(cal.id));
+    row.appendChild(cb); row.appendChild(name); row.appendChild(swatch);
+    list.appendChild(row);
+  });
+
+  if (!importedCalendars.length) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'color:var(--text3);font-size:13px;text-align:center;padding:16px 0;';
+    empty.textContent = 'インポートされたカレンダーはまだありません';
+    list.appendChild(empty);
+  }
+}
+document.getElementById('cal-visibility-close-btn').addEventListener('click', () => {
+  document.getElementById('cal-visibility-modal-overlay').classList.remove('open');
+});
+document.getElementById('cal-visibility-modal-close').addEventListener('click', () => {
+  document.getElementById('cal-visibility-modal-overlay').classList.remove('open');
+});
+document.getElementById('cal-visibility-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
+
+// ── インポートカレンダー編集（名前・色変更／削除） ──
+let editingCalId = null;
+let calEditFmt = { fg: '#1a44cc', bg: '#e8f0ff' };
+function openCalEditModal(calId) {
+  const cal = importedCalendars.find(c => c.id === calId);
+  if (!cal) return;
+  editingCalId = calId;
+  document.getElementById('cal-edit-name').value = cal.name;
+  calEditFmt = { fg: cal.fg, bg: cal.bg };
+  renderCalEditColorPickers();
+  document.getElementById('cal-edit-modal-overlay').classList.add('open');
+}
+function renderCalEditColorPickers() {
+  buildColorPicker('cal-edit-fg-row', FG_PALETTE.filter(c => c !== null), calEditFmt.fg, color => {
+    calEditFmt.fg = color; document.getElementById('cal-edit-fg-custom').value = color; renderCalEditColorPickers();
+  });
+  buildColorPicker('cal-edit-bg-row', BG_PALETTE.filter(c => c !== null), calEditFmt.bg, color => {
+    calEditFmt.bg = color; document.getElementById('cal-edit-bg-custom').value = color; renderCalEditColorPickers();
+  });
+}
+document.getElementById('cal-edit-fg-custom').addEventListener('input', e => { calEditFmt.fg = e.target.value; renderCalEditColorPickers(); });
+document.getElementById('cal-edit-bg-custom').addEventListener('input', e => { calEditFmt.bg = e.target.value; renderCalEditColorPickers(); });
+document.getElementById('cal-edit-save-btn').addEventListener('click', () => {
+  const i = importedCalendars.findIndex(c => c.id === editingCalId);
+  if (i >= 0) {
+    importedCalendars[i].name = document.getElementById('cal-edit-name').value.trim() || importedCalendars[i].name;
+    importedCalendars[i].fg = calEditFmt.fg;
+    importedCalendars[i].bg = calEditFmt.bg;
+    saveImportedCalendars();
+    scheduleImportedCalendarsSync();
+  }
+  document.getElementById('cal-edit-modal-overlay').classList.remove('open');
+  renderCalVisibilityList();
+  render();
+  showToast('カレンダーを更新しました ✓');
+});
+document.getElementById('cal-edit-delete-btn').addEventListener('click', () => {
+  if (!confirm('このカレンダーを削除しますか？')) return;
+  importedCalendars = importedCalendars.filter(c => c.id !== editingCalId);
+  delete importedEvents[editingCalId];
+  delete calVisibility[editingCalId];
+  saveImportedCalendars(); saveCalVisibility();
+  scheduleImportedCalendarsSync();
+  document.getElementById('cal-edit-modal-overlay').classList.remove('open');
+  renderCalVisibilityList();
+  render();
+  showToast('カレンダーを削除しました');
+});
+document.getElementById('cal-edit-cancel-btn').addEventListener('click', () => {
+  document.getElementById('cal-edit-modal-overlay').classList.remove('open');
+});
+document.getElementById('cal-edit-modal-close').addEventListener('click', () => {
+  document.getElementById('cal-edit-modal-overlay').classList.remove('open');
+});
+document.getElementById('cal-edit-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
+
 // ── EVENTS ──
 document.getElementById('modal-overlay').addEventListener('click', function(e) {
   if (e.target !== this) return;
@@ -2132,7 +2622,7 @@ getVapidPublicKey();
 updateMonthMenuLabel();
 render();
 updateNotifHeaderBtn();
-if (!config.userId) { showSetup(); } else { pullFromCloud(); }
+if (!config.userId) { showSetup(); refreshAllImportedEvents(); } else { pullFromCloud(); }
 checkVersion();
 setInterval(() => { const n=new Date(); if(n.getHours()===0&&n.getMinutes()===0) render(); }, 60000);
 
@@ -2144,8 +2634,9 @@ window.addEventListener('online', async () => {
     await pushToCloud();
     showToast('同期完了 ✓');
   } else {
-    setSyncUI('ok', '同期済み ✓');
+    setSyncUI('ok', '同期済み');
   }
+  refreshAllImportedEvents();
 });
 
 window.addEventListener('offline', () => {
