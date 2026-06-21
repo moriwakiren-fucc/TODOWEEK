@@ -767,3 +767,63 @@ body.dragging-active {
   z-index: 300; white-space: nowrap; box-shadow: var(--shadow);
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── 月間レイアウト ── */
+#month-outer {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+}
+#month-outer.hidden { display: none; }
+#table-outer.hidden { display: none; }
+
+#month-header-wrap {
+  flex-shrink: 0; display: flex;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.month-header-cell {
+  flex: 1 0 0; text-align: center; padding: 8px 2px;
+  font-size: 13px; font-weight: 700; color: var(--text2);
+  border-left: 1px solid var(--border);
+}
+.month-header-cell:first-child { border-left: none; }
+.month-header-cell.sun-col { color: #cc2222; }
+.month-header-cell.sat-col { color: #1a44cc; }
+
+#month-grid-wrap {
+  flex: 1; min-height: 0; overflow: hidden;
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  border-left: 1px solid var(--border);
+}
+.month-cell {
+  border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  padding: 4px 3px 3px; cursor: pointer; background: var(--surface);
+  overflow: hidden; transition: background 0.15s;
+}
+.month-cell:active { background: var(--accent-light); }
+.month-cell.other-month { background: #fafafc; }
+.month-cell.today-col { background: var(--today-bg); }
+.month-cell.today-col .month-cell-daynum { color: #e07020; font-weight: 700; }
+
+.month-cell-daynum {
+  font-size: 12px; font-family: 'DM Serif Display', serif; color: var(--text);
+  flex-shrink: 0; margin-bottom: 2px; line-height: 1.2;
+}
+.month-cell.other-month .month-cell-daynum { color: var(--text3); }
+.month-cell-daynum.sun-day { color: #cc2222; }
+.month-cell-daynum.sat-day { color: #1a44cc; }
+.month-cell-daynum.hol-day { color: #cc2222; }
+
+.month-cell-tasks {
+  flex: 1; min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.month-task-item {
+  display: block; border-radius: 4px; padding: 1px 4px;
+  font-size: 10px; line-height: 1.35; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; flex-shrink: 0;
+}
+.month-task-item.done { opacity: 0.5; text-decoration: line-through; }
+.month-task-more {
+  font-size: 10px; color: var(--text3); padding: 1px 4px;
+  flex-shrink: 0; line-height: 1.35;
+}
