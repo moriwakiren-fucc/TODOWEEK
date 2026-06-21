@@ -38,6 +38,8 @@
         <hr class="settings-divider">
         <button class="settings-item" id="settings-subject-color">🎨 科目と色</button>
         <hr class="settings-divider">
+        <button class="settings-item" id="settings-month-layout">🗓️ 月間レイアウト</button>
+        <hr class="settings-divider">
         <button class="settings-item" id="settings-history">📋 バージョン履歴</button>
         <hr class="settings-divider">
         <button class="settings-item" id="settings-cache">🔄 キャッシュをクリアして再読み込み</button>
@@ -50,7 +52,7 @@
     <span id="update-banner-text">❗ アプリのアップデートをしてください ❗</span>
   </div>
 
-  <!-- ── MAIN TABLE ── -->
+  <!-- ── MAIN TABLE（週レイアウト） ── -->
   <div id="table-outer">
     <!-- 長期目標行（スクロール外・固定） -->
     <div id="goal-row-wrap"></div>
@@ -61,6 +63,12 @@
         <div id="columns-wrap"></div>
       </div>
     </div>
+  </div>
+
+  <!-- ── MONTH TABLE（月間レイアウト） ── -->
+  <div id="month-outer" class="hidden">
+    <div id="month-header-wrap"></div>
+    <div id="month-grid-wrap"></div>
   </div>
 
   <!-- ── OVERDUE SECTION ── -->
