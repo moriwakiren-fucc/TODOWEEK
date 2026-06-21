@@ -24,11 +24,13 @@
   <header>
     <div class="logo" id="logo-btn">Todo<span>Remind</span></div>
     <div id="sync-status" title="タップして設定">
-      <div id="sync-dot"></div>
+      <div id="sync-dot"><span id="sync-dot-check">✓</span></div>
       <span id="sync-label">未設定</span>
     </div>
     <div id="settings-wrap">
-      <button id="settings-btn" title="設定">⚙️</button>
+      <button id="settings-btn" title="設定">
+        <span class="hamburger-icon"><span></span><span></span><span></span></span>
+      </button>
       <div id="settings-menu">
         <button class="settings-item" id="settings-notif">🔔 通知設定</button>
         <hr class="settings-divider">
@@ -39,6 +41,10 @@
         <button class="settings-item" id="settings-subject-color">🎨 科目と色</button>
         <hr class="settings-divider">
         <button class="settings-item" id="settings-month-layout">🗓️ 月間レイアウト</button>
+        <hr class="settings-divider">
+        <button class="settings-item" id="settings-calendar-import">📥 他のカレンダーアプリから追加</button>
+        <hr class="settings-divider">
+        <button class="settings-item" id="settings-calendar-visibility">🔘 表示するカレンダー</button>
         <hr class="settings-divider">
         <button class="settings-item" id="settings-history">📋 バージョン履歴</button>
         <hr class="settings-divider">
@@ -414,8 +420,107 @@
   </div>
 </div>
 
+<!-- ── カレンダーインポートモーダル ── -->
+<div class="modal-overlay" id="cal-import-modal-overlay">
+  <div class="modal">
+    <div class="modal-title">
+      <span id="cal-import-title-text">📥 他のカレンダーアプリから追加</span>
+      <button class="modal-close" id="cal-import-modal-close">✕</button>
+    </div>
+
+    <!-- STEP1: URL入力 -->
+    <div id="cal-import-step1">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:14px;">webcal・ical形式のURLを入力してください。</p>
+      <div class="form-group">
+        <label class="form-label">カレンダーURL</label>
+        <input class="form-input" id="cal-import-url" type="text" placeholder="https://example.com/calendar.ics">
+      </div>
+      <div id="cal-import-error" style="display:none;color:var(--accent2);font-size:13px;margin-bottom:10px;"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="cal-import-fetch-btn" disabled>インポート</button>
+        <button class="btn-secondary" id="cal-import-cancel-btn">キャンセル</button>
+      </div>
+    </div>
+
+    <!-- STEP2: 名前・色設定 -->
+    <div id="cal-import-step2" style="display:none;">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:14px;">取得できました。表示名と色を設定してください。</p>
+      <div class="form-group">
+        <label class="form-label">カレンダーの名前</label>
+        <input class="form-input" id="cal-import-name" type="text" placeholder="例: 学校行事カレンダー">
+      </div>
+      <div class="form-group">
+        <label class="form-label">文字色</label>
+        <div class="color-picker-row" id="cal-import-fg-row"></div>
+        <div class="color-custom-row">
+          <input type="color" id="cal-import-fg-custom" class="color-custom-input" value="#1a44cc">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">背景色</label>
+        <div class="color-picker-row" id="cal-import-bg-row"></div>
+        <div class="color-custom-row">
+          <input type="color" id="cal-import-bg-custom" class="color-custom-input" value="#e8f0ff">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="cal-import-save-btn">保存する</button>
+        <button class="btn-secondary" id="cal-import-back-btn">キャンセル</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 表示するカレンダーモーダル ── -->
+<div class="modal-overlay" id="cal-visibility-modal-overlay">
+  <div class="modal">
+    <div class="modal-title">
+      <span>🔘 表示するカレンダー</span>
+      <button class="modal-close" id="cal-visibility-modal-close">✕</button>
+    </div>
+    <div id="cal-visibility-list"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="cal-visibility-close-btn">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── インポートカレンダー編集モーダル（一覧から再編集） ── -->
+<div class="modal-overlay" id="cal-edit-modal-overlay">
+  <div class="modal">
+    <div class="modal-title">
+      <span>📥 カレンダー設定</span>
+      <button class="modal-close" id="cal-edit-modal-close">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">カレンダーの名前</label>
+      <input class="form-input" id="cal-edit-name" type="text">
+    </div>
+    <div class="form-group">
+      <label class="form-label">文字色</label>
+      <div class="color-picker-row" id="cal-edit-fg-row"></div>
+      <div class="color-custom-row">
+        <input type="color" id="cal-edit-fg-custom" class="color-custom-input" value="#1a44cc">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">背景色</label>
+      <div class="color-picker-row" id="cal-edit-bg-row"></div>
+      <div class="color-custom-row">
+        <input type="color" id="cal-edit-bg-custom" class="color-custom-input" value="#e8f0ff">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="cal-edit-save-btn">保存する</button>
+      <button class="btn-danger" id="cal-edit-delete-btn">削除</button>
+      <button class="btn-secondary" id="cal-edit-cancel-btn">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── TOAST ── -->
 <div id="toast"></div>
+<div id="readonly-toast">他のアプリから追加したカレンダーの予定は編集できません</div>
 
 <script src="script.js"></script>
 </body>
