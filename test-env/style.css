@@ -59,13 +59,22 @@ header {
 }
 #sync-status:hover { background: var(--surface2); }
 #sync-dot {
-  width: 9px; height: 9px; border-radius: 50%;
+  width: 14px; height: 14px; border-radius: 50%;
   background: var(--text3); transition: background 0.3s; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
 }
-#sync-dot.ok      { background: #3db86a; }
-#sync-dot.err     { background: var(--accent2); }
-#sync-dot.syncing { background: var(--accent); animation: pulse 0.8s infinite; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+#sync-dot-check {
+  display: none; color: #fff; font-size: 9px; font-weight: 900; line-height: 1;
+}
+#sync-dot.ok { background: #3db86a; }
+#sync-dot.ok #sync-dot-check { display: block; }
+#sync-dot.err { background: var(--accent2); }
+#sync-dot.syncing {
+  background: transparent; border: 2px solid #ffd6dc;
+  border-top-color: var(--accent2); animation: spin 0.7s linear infinite;
+}
+@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
 /* 🔔ボタン */
 
@@ -517,16 +526,26 @@ header {
   position: relative; flex-shrink: 0;
 }
 #settings-btn {
-  background: none; border: none; font-size: 22px; cursor: pointer;
-  padding: 4px 6px; border-radius: 8px; transition: background 0.15s;
+  background: none; border: none; cursor: pointer;
+  padding: 9px 8px; border-radius: 8px; transition: background 0.15s;
   flex-shrink: 0; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
 }
 #settings-btn:hover { background: var(--surface2); }
+.hamburger-icon {
+  display: flex; flex-direction: column; gap: 4px;
+  width: 21px;
+}
+.hamburger-icon span {
+  display: block; height: 2.5px; width: 100%;
+  background: var(--text); border-radius: 2px;
+}
 #settings-menu {
   display: none; position: absolute; top: calc(100% + 8px); right: 0;
   background: var(--surface); border: 1.5px solid var(--border);
   border-radius: var(--radius); box-shadow: var(--shadow);
-  min-width: 230px; z-index: 150; overflow: hidden;
+  min-width: 230px; z-index: 150; overflow-y: auto;
+  max-height: calc(100dvh - 90px);
 }
 #settings-menu.open {
   display: block; animation: fadeIn 0.15s ease;
@@ -807,11 +826,19 @@ body.dragging-active {
 .month-cell-daynum {
   font-size: 12px; font-family: 'DM Serif Display', serif; color: var(--text);
   flex-shrink: 0; margin-bottom: 2px; line-height: 1.2;
+  display: flex; align-items: baseline; gap: 3px; min-width: 0;
+  white-space: nowrap; overflow: hidden;
 }
 .month-cell.other-month .month-cell-daynum { color: var(--text3); }
 .month-cell-daynum.sun-day { color: #cc2222; }
 .month-cell-daynum.sat-day { color: #1a44cc; }
 .month-cell-daynum.hol-day { color: #cc2222; }
+.month-cell-daynum-num { flex-shrink: 0; }
+.month-cell-daynum-holname {
+  font-family: 'Noto Sans JP', sans-serif; font-weight: 700;
+  overflow: hidden; text-overflow: clip; white-space: nowrap;
+  transform-origin: left center; min-width: 0;
+}
 
 .month-cell-tasks {
   flex: 1; min-height: 0; overflow: hidden;
@@ -827,3 +854,54 @@ body.dragging-active {
   font-size: 10px; color: var(--text3); padding: 1px 4px;
   flex-shrink: 0; line-height: 1.35;
 }
+
+/* ── 月間レイアウト：週開始曜日トグル ── */
+.month-week-start-toggle {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  padding: 4px 0 2px; font-size: 12px; color: var(--text2);
+}
+.month-week-start-toggle button {
+  background: var(--surface2); border: 1.5px solid var(--border);
+  border-radius: 7px; padding: 4px 10px; font-size: 12px;
+  font-family: 'Noto Sans JP', sans-serif; cursor: pointer; color: var(--text2);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.month-week-start-toggle button.active {
+  background: var(--accent-light); color: var(--accent); border-color: #b8caff; font-weight: 700;
+}
+
+/* ── インポートカレンダー（チェックボックスなしTODOと同様の外観） ── */
+.task-item--imported { cursor: pointer; }
+
+/* ── 表示するカレンダー・リスト ── */
+.cal-vis-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 4px; border-bottom: 1px solid var(--border);
+}
+.cal-vis-row:last-child { border-bottom: none; }
+.cal-vis-row input[type="checkbox"] {
+  width: 19px; height: 19px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer;
+}
+.cal-vis-name {
+  flex: 1; min-width: 0; font-size: 14px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cal-vis-swatch {
+  width: 20px; height: 20px; border-radius: 6px; flex-shrink: 0;
+  border: 1.5px solid var(--border2); cursor: pointer;
+}
+.cal-vis-edit-btn {
+  background: none; border: none; color: var(--text3); font-size: 13px;
+  cursor: pointer; padding: 2px 4px; flex-shrink: 0;
+}
+
+/* ── 編集不可メッセージ（赤背景・白文字、下部固定） ── */
+#readonly-toast {
+  position: fixed; bottom: calc(20px + env(safe-area-inset-bottom));
+  left: 50%; transform: translateX(-50%) translateY(20px);
+  background: var(--accent2); color: #fff; font-size: 14px; font-weight: 700;
+  padding: 12px 22px; border-radius: 12px; opacity: 0;
+  pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+  z-index: 310; max-width: 88vw; text-align: center; box-shadow: var(--shadow);
+}
+#readonly-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
