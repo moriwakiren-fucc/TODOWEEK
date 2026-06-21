@@ -24,6 +24,10 @@ let overdueOpen    = true;
 let currentDateStr = '';
 let cachedVapidKey = null;
 
+// ── 月間レイアウト STATE ──
+let viewMode      = 'week'; // 'week' | 'month'
+let monthCursor   = null;   // 表示中の月の1日（Dateオブジェクト、表示専用）
+
 // ── FORMAT STATE ──
 let fmt = { bold: false, underline: false, 'double-underline': false, fg: null, bg: null };
 
@@ -166,6 +170,11 @@ function isHoliday(ds) { return !!HOLIDAY_MAP[ds]; }
 // ── HELPERS ──
 const DAY = ['日','月','火','水','木','金','土'];
 function toDateStr(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function daysBetween(from, to) {
+  const a = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const b = new Date(to.getFullYear(), to.getMonth(), to.getDate());
+  return Math.round((b - a) / 86400000);
+}
 function getVisibleDates(offset = 0, count = 7) {
   const t = new Date(); t.setHours(0,0,0,0); t.setDate(t.getDate() + offset);
   return Array.from({length: count}, (_, i) => { const d = new Date(t); d.setDate(t.getDate() + i); return d; });
@@ -498,6 +507,9 @@ function calcColWidth() {
 }
 
 function render() {
+  applyViewModeVisibility();
+  if (viewMode === 'month') { renderMonth(); return; }
+
   const dates    = getVisibleDates(dayOffset, visibleCols);
   const todayStr = getTodayStr();
   const colW     = calcColWidth();
@@ -568,6 +580,195 @@ function render() {
   }
 
   renderOverdue();
+}
+
+// ── 表示モード切替（週⇔月）のDOM表示制御 ──
+function applyViewModeVisibility() {
+  const tableOuter   = document.getElementById('table-outer');
+  const monthOuter    = document.getElementById('month-outer');
+  const overdueSec    = document.getElementById('overdue-section');
+  if (!tableOuter || !monthOuter) return;
+  if (viewMode === 'month') {
+    tableOuter.classList.add('hidden');
+    monthOuter.classList.remove('hidden');
+    if (overdueSec) overdueSec.classList.add('hidden');
+  } else {
+    tableOuter.classList.remove('hidden');
+    monthOuter.classList.add('hidden');
+    // overdue-sectionの表示・非表示はrenderOverdue()自身が制御
+  }
+}
+
+// 月の名前等のヘルパー
+function getMonthDates(monthDate) {
+  // monthDate: その月の1日（時刻ゼロ）のDate
+  const year  = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const firstDay      = new Date(year, month, 1);
+  const startWeekday  = firstDay.getDay(); // 日曜=0始まり
+  const gridStart     = new Date(firstDay);
+  gridStart.setDate(firstDay.getDate() - startWeekday);
+  // 6週間分（42日）を表示。最終週がその月の日を含まない場合は5週間に削れる
+  const allDates = Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(gridStart); d.setDate(gridStart.getDate() + i); return d;
+  });
+  // 最後の週（35〜41）が全て翌月のみで構成されるなら除外して5週間表示にする
+  const lastWeek = allDates.slice(35, 42);
+  const lastWeekHasCurrentMonth = lastWeek.some(d => d.getMonth() === month);
+  return lastWeekHasCurrentMonth ? allDates : allDates.slice(0, 35);
+}
+
+function renderMonth() {
+  if (!monthCursor) monthCursor = (() => { const t = new Date(); t.setHours(0,0,0,0); t.setDate(1); return t; })();
+  const todayStr = getTodayStr();
+  const year     = monthCursor.getFullYear();
+  const month    = monthCursor.getMonth();
+  const dates    = getMonthDates(monthCursor);
+
+  // ── ヘッダー（＜ 年月 ＞ ＋ 曜日行） ──
+  const headerWrap = document.getElementById('month-header-wrap');
+  if (headerWrap) {
+    headerWrap.innerHTML = '';
+    // ナビ行は goal-row-wrap を流用（goal入力欄は出さず、月表示にする）
+    const goalWrap = document.getElementById('goal-row-wrap');
+    if (goalWrap) {
+      goalWrap.innerHTML = '';
+      const nav = document.createElement('div'); nav.className = 'goal-nav';
+      const prevBtn = document.createElement('button');
+      prevBtn.className = 'goal-nav-btn'; prevBtn.textContent = '＜'; prevBtn.title = '前の月';
+      prevBtn.addEventListener('click', () => {
+        monthCursor = new Date(year, month - 1, 1); render();
+      });
+      const label = document.createElement('div');
+      label.style.cssText = 'flex:1;text-align:center;font-family:"DM Serif Display",serif;font-size:17px;color:var(--text);';
+      label.textContent = `${year}年 ${month + 1}月`;
+      const nextBtn = document.createElement('button');
+      nextBtn.className = 'goal-nav-btn'; nextBtn.textContent = '＞'; nextBtn.title = '次の月';
+      nextBtn.addEventListener('click', () => {
+        monthCursor = new Date(year, month + 1, 1); render();
+      });
+      nav.appendChild(prevBtn); nav.appendChild(label); nav.appendChild(nextBtn);
+      goalWrap.appendChild(nav);
+    }
+    // 曜日行
+    DAY.forEach((d, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'month-header-cell' + (i === 0 ? ' sun-col' : i === 6 ? ' sat-col' : '');
+      cell.textContent = d;
+      headerWrap.appendChild(cell);
+    });
+  }
+
+  // ── グリッド本体 ──
+  const gridWrap = document.getElementById('month-grid-wrap');
+  if (!gridWrap) return;
+  gridWrap.innerHTML = '';
+  gridWrap.style.gridTemplateRows = `repeat(${dates.length / 7}, 1fr)`;
+
+  dates.forEach(d => {
+    const ds  = toDateStr(d);
+    const dow = d.getDay();
+    const hol = isHoliday(ds);
+    const isOtherMonth = d.getMonth() !== month;
+    const isToday = ds === todayStr;
+
+    const cell = document.createElement('div');
+    cell.className = 'month-cell' + (isOtherMonth ? ' other-month' : '') + (isToday ? ' today-col' : '');
+
+    const dayNum = document.createElement('div');
+    let dayNumCls = 'month-cell-daynum';
+    if (!isOtherMonth) {
+      if (hol) dayNumCls += ' hol-day';
+      else if (dow === 0) dayNumCls += ' sun-day';
+      else if (dow === 6) dayNumCls += ' sat-day';
+    }
+    dayNum.className = dayNumCls;
+    dayNum.textContent = d.getDate();
+    cell.appendChild(dayNum);
+
+    const taskWrap = document.createElement('div');
+    taskWrap.className = 'month-cell-tasks';
+    cell.appendChild(taskWrap);
+
+    const dayTasks = sortTasksForDate(tasks.filter(t => t.date === ds));
+    dayTasks.forEach(t => taskWrap.appendChild(makeMonthTaskEl(t)));
+
+    // クリックでその日始まりの週レイアウトへ
+    cell.addEventListener('click', () => {
+      dayOffset = daysBetween(new Date(new Date().setHours(0,0,0,0)), d);
+      viewMode = 'week';
+      updateMonthMenuLabel();
+      render();
+    });
+
+    gridWrap.appendChild(cell);
+
+    // ── 枠の高さに収まらない分は「…その他n件」表示（描画後に判定） ──
+    requestAnimationFrame(() => fitMonthCellTasks(cell, taskWrap, dayTasks.length));
+  });
+}
+
+function makeMonthTaskEl(task) {
+  const div = document.createElement('div');
+  div.className = 'month-task-item' + (task.done ? ' done' : '');
+  const c = getColor(task.subject);
+  const effectiveFg = (task.format && task.format.fg) ? task.format.fg : c.fg;
+  div.style.background = (task.format && task.format.bg) ? task.format.bg : c.bg;
+  div.style.color      = effectiveFg;
+  const f = task.format || {};
+  let td = ''; if (f.underline) td = 'underline'; else if (f['double-underline']) td = 'underline double';
+  div.style.textDecoration = td;
+  div.style.fontWeight = '600';
+
+  const hasSubject = task.subject && task.subject !== 'なし';
+  div.textContent = hasSubject ? `${task.subject} ${task.title}` : task.title;
+  return div;
+}
+
+// 枠内に収まらないタスクを「…その他n件」に畳む
+function fitMonthCellTasks(cell, taskWrap, totalCount) {
+  const items = Array.from(taskWrap.querySelectorAll('.month-task-item'));
+  if (!items.length) return;
+  const wrapBottom = taskWrap.getBoundingClientRect().bottom;
+  let shownCount = items.length;
+  for (let i = 0; i < items.length; i++) {
+    const r = items[i].getBoundingClientRect();
+    if (r.bottom > wrapBottom + 0.5) { shownCount = i; break; }
+  }
+  if (shownCount >= items.length) return; // 全部収まっている
+
+  // shownCount件だけ残し、それ以降を削除して「その他n件」を追加
+  for (let i = items.length - 1; i >= Math.max(shownCount, 0); i--) {
+    items[i].remove();
+  }
+  // 「その他」表示分のスペースも考慮し、収まらなければさらに1件減らす
+  const more = document.createElement('div');
+  more.className = 'month-task-more';
+  const hiddenCount = totalCount - shownCount;
+  more.textContent = `…その他${hiddenCount}件`;
+  taskWrap.appendChild(more);
+
+  // 「その他」自体が枠をはみ出す場合はさらに1件削る
+  let guard = 0;
+  while (taskWrap.getBoundingClientRect().bottom > wrapBottom + 0.5 && taskWrap.children.length > 1 && guard < 50) {
+    // 「その他」の直前のタスク要素を削除
+    const taskEls = taskWrap.querySelectorAll('.month-task-item');
+    if (!taskEls.length) break;
+    taskEls[taskEls.length - 1].remove();
+    more.textContent = `…その他${totalCount - taskWrap.querySelectorAll('.month-task-item').length}件`;
+    guard++;
+  }
+  if (taskWrap.querySelectorAll('.month-task-item').length === 0 && more.parentElement) {
+    // 1件も表示できない極端なケース：「その他n件」のみ表示（n=totalCount）
+    more.textContent = `…その他${totalCount}件`;
+  }
+}
+
+// 設定メニューの「月間レイアウト」ラベルを状態に応じて更新
+function updateMonthMenuLabel() {
+  const btn = document.getElementById('settings-month-layout');
+  if (!btn) return;
+  btn.textContent = viewMode === 'month' ? '📅 週レイアウトに戻す' : '🗓️ 月間レイアウト';
 }
 
 // リサイズ時に完全再描画
@@ -1208,6 +1409,20 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
   document.getElementById('settings-subject-color').addEventListener('click', () => {
     menu.classList.remove('open');
     openSubjectColorModal();
+  });
+
+  // 月間レイアウト切替
+  const monthBtn = document.getElementById('settings-month-layout');
+  if (monthBtn) monthBtn.addEventListener('click', () => {
+    menu.classList.remove('open');
+    if (viewMode === 'month') {
+      viewMode = 'week';
+    } else {
+      viewMode = 'month';
+      monthCursor = (() => { const t = new Date(); t.setHours(0,0,0,0); t.setDate(1); return t; })();
+    }
+    updateMonthMenuLabel();
+    render();
   });
 
   // 通知設定
@@ -1914,6 +2129,7 @@ function showToast(msg) {
 // ── INIT ──
 registerServiceWorker();
 getVapidPublicKey();
+updateMonthMenuLabel();
 render();
 updateNotifHeaderBtn();
 if (!config.userId) { showSetup(); } else { pullFromCloud(); }
