@@ -293,19 +293,26 @@ async function registerServiceWorker() {
   } catch(e) { console.error('SW registration failed:', e); return null; }
 }
 
-// ── APP BADGE（ホーム画面アイコンの未完了数バッジ） ──
-// Service Worker は localStorage に触れないため、最新の未完了数を IndexedDB に共有する
+// ── APP BADGE（ホーム画面アイコンのバッジ＝期日を過ぎた未完了タスク数） ──
+// Service Worker は localStorage に触れないため、IndexedDB に共有する
 const BADGE_DB_NAME  = 'todoweek-badge';
 const BADGE_STORE    = 'state';
-const BADGE_KEY      = 'incompleteCount';
+const BADGE_KEY      = 'overdueCount';   // 画面側が最後に計算した「期限切れ未完了数」
+const BADGE_DATES_KEY = 'pendingDates';  // 未完了（予定除く）タスクの日付一覧。SW が当日基準で再計算する用
 
-// 未完了タスク数（予定＝isEvent は完了操作がないので除外。renderOverdue と同じ判定）
-function countIncompleteTasks() {
-  return tasks.filter(t => !t.isEvent && !t.done).length;
+// 未完了（予定は除く）タスクの日付一覧
+function getPendingDates() {
+  return tasks.filter(t => !t.isEvent && !t.done).map(t => t.date);
 }
 
-// 未完了数を IndexedDB に保存（SW の push 時に使う）。失敗しても無視
-function saveBadgeCount(count) {
+// 期日を過ぎた未完了タスク数（renderOverdue と同じ判定：date < 今日）
+function countOverdueTasks() {
+  const today = getTodayStr();
+  return tasks.filter(t => !t.isEvent && !t.done && t.date < today).length;
+}
+
+// IndexedDB に保存（SW の push 時に使う）。失敗しても無視
+function saveBadgeState(count, dates) {
   return new Promise(resolve => {
     try {
       if (!('indexedDB' in window)) return resolve();
@@ -316,7 +323,9 @@ function saveBadgeCount(count) {
         try {
           const db = req.result;
           const tx = db.transaction(BADGE_STORE, 'readwrite');
-          tx.objectStore(BADGE_STORE).put(count, BADGE_KEY);
+          const st = tx.objectStore(BADGE_STORE);
+          st.put(count, BADGE_KEY);
+          st.put(dates, BADGE_DATES_KEY);
           tx.oncomplete = () => { db.close(); resolve(); };
           tx.onerror = tx.onabort = () => { db.close(); resolve(); };
         } catch (e) { resolve(); }
@@ -328,7 +337,7 @@ function saveBadgeCount(count) {
 // バッジ更新本体。非対応環境・例外でもアプリを止めない（常に resolve する）
 async function updateAppBadge() {
   try {
-    const count = countIncompleteTasks();
+    const count = countOverdueTasks();
     if ('setAppBadge' in navigator) {
       try {
         if (count > 0) await navigator.setAppBadge(count);
@@ -337,7 +346,7 @@ async function updateAppBadge() {
         console.warn('App Badge update failed:', e);
       }
     }
-    await saveBadgeCount(count); // 非対応環境でも SW 用に保存しておく
+    await saveBadgeState(count, getPendingDates()); // 非対応環境でも SW 用に保存
   } catch (e) {
     console.warn('updateAppBadge error:', e);
   }
@@ -1970,7 +1979,10 @@ updateAppBadge();
 updateNotifHeaderBtn();
 if (!config.userId) { showSetup(); } else { pullFromCloud(); }
 checkVersion();
-setInterval(() => { const n=new Date(); if(n.getHours()===0&&n.getMinutes()===0) render(); }, 60000);
+setInterval(() => { const n=new Date(); if(n.getHours()===0&&n.getMinutes()===0) { render(); updateAppBadge(); } }, 60000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') updateAppBadge();
+});
 
 // オンライン復帰時に未同期データを自動送信
 window.addEventListener('online', async () => {
