@@ -66,11 +66,12 @@ self.addEventListener('fetch', e => {
 });
 
 // ── App Badge（バックグラウンド更新用） ──
-// 画面側 (script.js) が保存した「未完了タスク数」を IndexedDB から読む。
+// バッジ＝期日を過ぎた未完了タスク数。画面側 (script.js) が IndexedDB に保存した値を読む。
 // ※ activate で CACHE_NAME 以外のキャッシュを消すため、保存先は Cache API ではなく IndexedDB
-const BADGE_DB_NAME = 'todoweek-badge';
-const BADGE_STORE   = 'state';
-const BADGE_KEY     = 'incompleteCount';
+const BADGE_DB_NAME   = 'todoweek-badge';
+const BADGE_STORE     = 'state';
+const BADGE_KEY       = 'overdueCount';
+const BADGE_DATES_KEY = 'pendingDates';
 
 function badgeDbOpen() {
   return new Promise((resolve, reject) => {
@@ -81,18 +82,18 @@ function badgeDbOpen() {
   });
 }
 
-async function readStoredBadgeCount() {
+async function readBadgeState(key) {
   try {
     const db = await badgeDbOpen();
     return await new Promise(resolve => {
-      const req = db.transaction(BADGE_STORE, 'readonly').objectStore(BADGE_STORE).get(BADGE_KEY);
+      const req = db.transaction(BADGE_STORE, 'readonly').objectStore(BADGE_STORE).get(key);
       req.onsuccess = () => { db.close(); resolve(req.result); };
       req.onerror   = () => { db.close(); resolve(undefined); };
     });
   } catch (err) { return undefined; }
 }
 
-async function writeStoredBadgeCount(count) {
+async function writeBadgeCount(count) {
   try {
     const db = await badgeDbOpen();
     await new Promise(resolve => {
@@ -104,10 +105,16 @@ async function writeStoredBadgeCount(count) {
   } catch (err) {}
 }
 
+function todayStrLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 // push 受信時のバッジ更新。決して reject しない（通知表示を妨げないため）
-//  優先順位: ① pushペイロードの badge（サーバーが未完了数を載せた場合）
-//            ② 画面側が最後に保存した未完了数
-//  どちらも無ければバッジには触れない
+//  優先順位: ① pushペイロードの badge（サーバーが期限切れ未完了数を載せた場合）
+//            ② 保存済みの未完了タスク日付から「今日」基準で再計算（日付をまたいでも正確）
+//            ③ 画面側が最後に保存した数
+//  どれも無ければバッジには触れない
 async function updateBadgeOnPush(payload) {
   try {
     if (!self.navigator || !('setAppBadge' in self.navigator)) return;
@@ -117,9 +124,16 @@ async function updateBadgeOnPush(payload) {
     const n = Number(raw);
     if (raw !== undefined && raw !== null && raw !== '' && Number.isInteger(n) && n >= 0) {
       count = n;
-      await writeStoredBadgeCount(count); // 画面側と整合させる
+      await writeBadgeCount(count);
     } else {
-      count = await readStoredBadgeCount();
+      const dates = await readBadgeState(BADGE_DATES_KEY);
+      if (Array.isArray(dates)) {
+        const today = todayStrLocal();
+        count = dates.filter(d => typeof d === 'string' && d < today).length;
+        await writeBadgeCount(count);
+      } else {
+        count = await readBadgeState(BADGE_KEY);
+      }
     }
     if (!Number.isInteger(count) || count < 0) return;
 
