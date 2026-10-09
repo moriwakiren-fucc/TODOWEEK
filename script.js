@@ -231,6 +231,7 @@ async function pullFromCloud() {
     await pullFavoritesFromCloud();
     await pullSubjectSettingsFromCloud();
     render();
+    updateAppBadge(); // 他端末の変更でタスクが置き換わるため
   } catch(e) {
     setSyncUI('err', 'エラー');
     render(); // エラーでもローカルデータで表示
@@ -290,6 +291,56 @@ async function registerServiceWorker() {
     const scopeUrl = new URL('./',      location.href).href;
     return await navigator.serviceWorker.register(swUrl, { scope: scopeUrl });
   } catch(e) { console.error('SW registration failed:', e); return null; }
+}
+
+// ── APP BADGE（ホーム画面アイコンの未完了数バッジ） ──
+// Service Worker は localStorage に触れないため、最新の未完了数を IndexedDB に共有する
+const BADGE_DB_NAME  = 'todoweek-badge';
+const BADGE_STORE    = 'state';
+const BADGE_KEY      = 'incompleteCount';
+
+// 未完了タスク数（予定＝isEvent は完了操作がないので除外。renderOverdue と同じ判定）
+function countIncompleteTasks() {
+  return tasks.filter(t => !t.isEvent && !t.done).length;
+}
+
+// 未完了数を IndexedDB に保存（SW の push 時に使う）。失敗しても無視
+function saveBadgeCount(count) {
+  return new Promise(resolve => {
+    try {
+      if (!('indexedDB' in window)) return resolve();
+      const req = indexedDB.open(BADGE_DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(BADGE_STORE);
+      req.onerror = () => resolve();
+      req.onsuccess = () => {
+        try {
+          const db = req.result;
+          const tx = db.transaction(BADGE_STORE, 'readwrite');
+          tx.objectStore(BADGE_STORE).put(count, BADGE_KEY);
+          tx.oncomplete = () => { db.close(); resolve(); };
+          tx.onerror = tx.onabort = () => { db.close(); resolve(); };
+        } catch (e) { resolve(); }
+      };
+    } catch (e) { resolve(); }
+  });
+}
+
+// バッジ更新本体。非対応環境・例外でもアプリを止めない（常に resolve する）
+async function updateAppBadge() {
+  try {
+    const count = countIncompleteTasks();
+    if ('setAppBadge' in navigator) {
+      try {
+        if (count > 0) await navigator.setAppBadge(count);
+        else           await navigator.clearAppBadge();
+      } catch (e) {
+        console.warn('App Badge update failed:', e);
+      }
+    }
+    await saveBadgeCount(count); // 非対応環境でも SW 用に保存しておく
+  } catch (e) {
+    console.warn('updateAppBadge error:', e);
+  }
 }
 
 // ── VAPID KEY ──
@@ -591,7 +642,7 @@ function makeTaskEl(task, isOverdue = false) {
   cb.addEventListener('click', e => {
     e.stopPropagation();
     if (task.isEvent) return; // 予定タスクは完了不可
-    task.done = !task.done; schedulePush(); render();
+    task.done = !task.done; schedulePush(); render(); updateAppBadge();
   });
 
   const lbl = document.createElement('div'); lbl.className = 'task-label';
@@ -1121,13 +1172,13 @@ function saveTask() {
     tasks.push(newTask);
     showToast('追加しました ✓');
   }
-  schedulePush(); closeModal(); render();
+  schedulePush(); closeModal(); render(); updateAppBadge();
 }
 
 function deleteTask() {
   if (!editingId || !confirm('この予定を削除しますか？')) return;
   tasks = tasks.filter(t => t.id !== editingId);
-  schedulePush(); closeModal(); render(); showToast('削除しました');
+  schedulePush(); closeModal(); render(); updateAppBadge(); showToast('削除しました');
 }
 
 // ── SETUP ──
@@ -1173,7 +1224,7 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
   config = {}; tasks = [];
   localStorage.removeItem(CFG_KEY); localStorage.removeItem(TASKS_KEY);
   document.getElementById('setup-overlay').classList.remove('open');
-  setSyncUI('','未設定'); render(); showToast('ログアウトしました');
+  setSyncUI('','未設定'); render(); updateAppBadge(); showToast('ログアウトしました');
   setTimeout(showSetup, 400);
 });
 
@@ -1915,6 +1966,7 @@ function showToast(msg) {
 registerServiceWorker();
 getVapidPublicKey();
 render();
+updateAppBadge();
 updateNotifHeaderBtn();
 if (!config.userId) { showSetup(); } else { pullFromCloud(); }
 checkVersion();

@@ -1,6 +1,6 @@
 // sw.js - TodoWeek Service Worker
 
-const CACHE_NAME = 'todoweek10.3';
+const CACHE_NAME = 'todoweek10.4';
 const CACHE_URLS = [
   './',
   './index.html',
@@ -65,20 +65,86 @@ self.addEventListener('fetch', e => {
   );
 });
 
+// ── App Badge（バックグラウンド更新用） ──
+// 画面側 (script.js) が保存した「未完了タスク数」を IndexedDB から読む。
+// ※ activate で CACHE_NAME 以外のキャッシュを消すため、保存先は Cache API ではなく IndexedDB
+const BADGE_DB_NAME = 'todoweek-badge';
+const BADGE_STORE   = 'state';
+const BADGE_KEY     = 'incompleteCount';
+
+function badgeDbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(BADGE_DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(BADGE_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function readStoredBadgeCount() {
+  try {
+    const db = await badgeDbOpen();
+    return await new Promise(resolve => {
+      const req = db.transaction(BADGE_STORE, 'readonly').objectStore(BADGE_STORE).get(BADGE_KEY);
+      req.onsuccess = () => { db.close(); resolve(req.result); };
+      req.onerror   = () => { db.close(); resolve(undefined); };
+    });
+  } catch (err) { return undefined; }
+}
+
+async function writeStoredBadgeCount(count) {
+  try {
+    const db = await badgeDbOpen();
+    await new Promise(resolve => {
+      const tx = db.transaction(BADGE_STORE, 'readwrite');
+      tx.objectStore(BADGE_STORE).put(count, BADGE_KEY);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = tx.onabort = () => { db.close(); resolve(); };
+    });
+  } catch (err) {}
+}
+
+// push 受信時のバッジ更新。決して reject しない（通知表示を妨げないため）
+//  優先順位: ① pushペイロードの badge（サーバーが未完了数を載せた場合）
+//            ② 画面側が最後に保存した未完了数
+//  どちらも無ければバッジには触れない
+async function updateBadgeOnPush(payload) {
+  try {
+    if (!self.navigator || !('setAppBadge' in self.navigator)) return;
+
+    let count;
+    const raw = payload && payload.badge;
+    const n = Number(raw);
+    if (raw !== undefined && raw !== null && raw !== '' && Number.isInteger(n) && n >= 0) {
+      count = n;
+      await writeStoredBadgeCount(count); // 画面側と整合させる
+    } else {
+      count = await readStoredBadgeCount();
+    }
+    if (!Number.isInteger(count) || count < 0) return;
+
+    if (count > 0) await self.navigator.setAppBadge(count);
+    else           await self.navigator.clearAppBadge();
+  } catch (err) {
+    // 非対応・権限なし等は握りつぶす
+  }
+}
+
 // ── プッシュ通知を受信 ──
 self.addEventListener('push', e => {
   let data = { title: '【リマインド】', body: 'TODOが近づいています' };
   try { data = e.data.json(); } catch(err) {}
 
-  e.waitUntil(
+  e.waitUntil(Promise.all([
     self.registration.showNotification(data.title, {
       body:    data.body,
       icon:    'apple-touch-icon.png',
       badge:   'apple-touch-icon.png',
       tag:     data.tag || 'todoweek-remind',
       data:    { url: self.registration.scope },
-    })
-  );
+    }),
+    updateBadgeOnPush(data), // アイコンバッジも更新
+  ]));
 });
 
 // ── 通知タップで画面を開く ──
