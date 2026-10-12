@@ -1,6 +1,6 @@
 // sw.js - TodoWeek Service Worker
 
-const CACHE_NAME = 'todoweek10.4';
+const CACHE_NAME = 'todoweek12.0';
 const CACHE_URLS = [
   './',
   './index.html',
@@ -72,6 +72,7 @@ const BADGE_DB_NAME   = 'todoweek-badge';
 const BADGE_STORE     = 'state';
 const BADGE_KEY       = 'overdueCount';
 const BADGE_DATES_KEY = 'pendingDates';
+const SYNC_STATE_KEY  = 'syncState'; // 画面側が保存する未同期タスクの写し {userId, workerUrl, tasks, dirty, rev}
 
 function badgeDbOpen() {
   return new Promise((resolve, reject) => {
@@ -103,6 +104,48 @@ async function writeBadgeCount(count) {
       tx.onerror = tx.onabort = () => { db.close(); resolve(); };
     });
   } catch (err) {}
+}
+
+// ── 未同期タスクのバックグラウンド同期 ──
+// 画面側が IndexedDB に保存した syncState が dirty なら、Worker に PUT する。
+// Worker はタスク単位で統合した全件を返すので、それを保存し直す。
+// 失敗時は throw する（Background Sync の再試行用）。push 側では握りつぶす。
+async function syncPendingTasks() {
+  const st = await readBadgeState(SYNC_STATE_KEY);
+  if (!st || !st.dirty || !st.userId || !st.workerUrl || !Array.isArray(st.tasks)) return false;
+  const res = await fetch(`${st.workerUrl}/tasks/${encodeURIComponent(st.userId)}`, {
+    method:  'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(st.tasks),
+  });
+  if (!res.ok) throw new Error('sync failed: ' + res.status);
+  let merged = null;
+  try { const j = await res.json(); if (Array.isArray(j)) merged = j; } catch (err) {}
+  await commitSyncResult(st.rev, merged);
+  return true;
+}
+
+// 同期結果を保存。送信中に画面側が編集して rev が進んでいたら dirty は下ろさない（画面側の変更を優先）
+async function commitSyncResult(expectedRev, mergedTasks) {
+  const db = await badgeDbOpen();
+  return new Promise(resolve => {
+    const tx    = db.transaction(BADGE_STORE, 'readwrite');
+    const store = tx.objectStore(BADGE_STORE);
+    const getReq = store.get(SYNC_STATE_KEY);
+    getReq.onsuccess = () => {
+      const cur = getReq.result;
+      if (!cur || cur.rev !== expectedRev) return;
+      const tasks = Array.isArray(mergedTasks) ? mergedTasks : cur.tasks;
+      store.put({ ...cur, tasks, dirty: false, syncedAt: Date.now() }, SYNC_STATE_KEY);
+      // バッジ用の日付一覧・件数も統合後の内容で更新
+      const pend  = tasks.filter(t => t && !t.deleted && !t.isEvent && !t.done && typeof t.date === 'string').map(t => t.date);
+      const today = todayStrLocal();
+      store.put(pend, BADGE_DATES_KEY);
+      store.put(pend.filter(d => d < today).length, BADGE_KEY);
+    };
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = tx.onabort = () => { db.close(); resolve(); };
+  });
 }
 
 function todayStrLocal() {
@@ -149,16 +192,26 @@ self.addEventListener('push', e => {
   let data = { title: '【リマインド】', body: 'TODOが近づいています' };
   try { data = e.data.json(); } catch(err) {}
 
-  e.waitUntil(Promise.all([
-    self.registration.showNotification(data.title, {
+  e.waitUntil((async () => {
+    // 通知は最優先で表示（同期の成否に関わらず必ず出す）
+    const notifP = self.registration.showNotification(data.title, {
       body:    data.body,
       icon:    'apple-touch-icon.png',
       badge:   'apple-touch-icon.png',
       tag:     data.tag || 'todoweek-remind',
       data:    { url: self.registration.scope },
-    }),
-    updateBadgeOnPush(data), // アイコンバッジも更新
-  ]));
+    });
+    // 通知を受け取ったタイミングで、オフライン中に溜まった変更を自動同期（iOSはこの経路）
+    try { await syncPendingTasks(); } catch (err) {}
+    await updateBadgeOnPush(data); // アイコンバッジも更新（統合後の内容を反映）
+    await notifP;
+  })());
+});
+
+// ── Background Sync（Android/Chrome系のみ。iOSでは発火しない） ──
+self.addEventListener('sync', e => {
+  if (e.tag !== 'todoweek-sync') return;
+  e.waitUntil(syncPendingTasks().then(() => updateBadgeOnPush({}))); // 失敗(throw)で再試行される
 });
 
 // ── 通知タップで画面を開く ──
