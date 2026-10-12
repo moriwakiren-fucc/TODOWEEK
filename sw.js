@@ -1,6 +1,6 @@
 // sw.js - TodoWeek Service Worker
 
-const CACHE_NAME = 'todoweek12.0';
+const CACHE_NAME = 'todoweek13.0';
 const CACHE_URLS = [
   './',
   './index.html',
@@ -72,6 +72,8 @@ const BADGE_DB_NAME   = 'todoweek-badge';
 const BADGE_STORE     = 'state';
 const BADGE_KEY       = 'overdueCount';
 const BADGE_DATES_KEY = 'pendingDates';
+const BADGE_CONFIG_KEY = 'badgeConfig'; // バッジの設定 {past, today, future, includeEvents}（画面側が保存）
+const BADGE_CONFIG_DEFAULT = { past: true, today: false, future: false, includeEvents: false };
 const SYNC_STATE_KEY  = 'syncState'; // 画面側が保存する未同期タスクの写し {userId, workerUrl, tasks, dirty, rev}
 
 function badgeDbOpen() {
@@ -121,12 +123,13 @@ async function syncPendingTasks() {
   if (!res.ok) throw new Error('sync failed: ' + res.status);
   let merged = null;
   try { const j = await res.json(); if (Array.isArray(j)) merged = j; } catch (err) {}
-  await commitSyncResult(st.rev, merged);
+  const cfg = await readBadgeState(BADGE_CONFIG_KEY);
+  await commitSyncResult(st.rev, merged, cfg);
   return true;
 }
 
 // 同期結果を保存。送信中に画面側が編集して rev が進んでいたら dirty は下ろさない（画面側の変更を優先）
-async function commitSyncResult(expectedRev, mergedTasks) {
+async function commitSyncResult(expectedRev, mergedTasks, cfg) {
   const db = await badgeDbOpen();
   return new Promise(resolve => {
     const tx    = db.transaction(BADGE_STORE, 'readwrite');
@@ -138,14 +141,26 @@ async function commitSyncResult(expectedRev, mergedTasks) {
       const tasks = Array.isArray(mergedTasks) ? mergedTasks : cur.tasks;
       store.put({ ...cur, tasks, dirty: false, syncedAt: Date.now() }, SYNC_STATE_KEY);
       // バッジ用の日付一覧・件数も統合後の内容で更新
-      const pend  = tasks.filter(t => t && !t.deleted && !t.isEvent && !t.done && typeof t.date === 'string').map(t => t.date);
+      const incEvents = normBadgeConfig(cfg).includeEvents;
+      const pend  = tasks.filter(t => t && !t.deleted && !t.done && (!t.isEvent || incEvents) && typeof t.date === 'string').map(t => t.date);
       const today = todayStrLocal();
       store.put(pend, BADGE_DATES_KEY);
-      store.put(pend.filter(d => d < today).length, BADGE_KEY);
+      store.put(countBadgeDates(pend, cfg, today), BADGE_KEY);
     };
     tx.oncomplete = () => { db.close(); resolve(); };
     tx.onerror = tx.onabort = () => { db.close(); resolve(); };
   });
+}
+
+function normBadgeConfig(c) {
+  const b = { ...BADGE_CONFIG_DEFAULT };
+  if (c && typeof c === 'object') Object.keys(b).forEach(k => { if (typeof c[k] === 'boolean') b[k] = c[k]; });
+  return b;
+}
+// 日付一覧のうち、設定でオンの区分（過去＝今日より前／今日／未来＝今日より後）に当たる数
+function countBadgeDates(dates, cfg, today) {
+  const b = normBadgeConfig(cfg);
+  return dates.filter(d => typeof d === 'string' && (d < today ? b.past : d > today ? b.future : b.today)).length;
 }
 
 function todayStrLocal() {
@@ -172,7 +187,8 @@ async function updateBadgeOnPush(payload) {
       const dates = await readBadgeState(BADGE_DATES_KEY);
       if (Array.isArray(dates)) {
         const today = todayStrLocal();
-        count = dates.filter(d => typeof d === 'string' && d < today).length;
+        const cfg = await readBadgeState(BADGE_CONFIG_KEY);
+        count = countBadgeDates(dates, cfg, today);
         await writeBadgeCount(count);
       } else {
         count = await readBadgeState(BADGE_KEY);

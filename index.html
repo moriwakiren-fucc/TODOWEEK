@@ -38,6 +38,8 @@
         <hr class="settings-divider">
         <button class="settings-item" id="settings-subject-color">🎨 科目と色</button>
         <hr class="settings-divider">
+        <button class="settings-item" id="settings-badge">🔴 バッジの設定</button>
+        <hr class="settings-divider">
         <button class="settings-item" id="settings-history">📋 バージョン履歴</button>
         <hr class="settings-divider">
         <button class="settings-item" id="settings-cache">🔄 キャッシュをクリアして再読み込み</button>
@@ -402,6 +404,45 @@
     <div class="modal-actions">
       <button class="btn-primary" id="subject-color-save-btn">保存する</button>
       <button class="btn-secondary" id="subject-color-cancel-btn">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── バッジ設定モーダル ── -->
+<div class="modal-overlay" id="badge-modal-overlay">
+  <div class="modal">
+    <div class="modal-title">
+      <span>🔴 バッジの設定</span>
+      <button class="modal-close" id="badge-modal-close">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="event-checkbox-label">
+        <input type="checkbox" id="badge-past">
+        <span>過去の未完了タスク</span>
+      </label>
+    </div>
+    <div class="form-group">
+      <label class="event-checkbox-label">
+        <input type="checkbox" id="badge-today">
+        <span>今日の未完了タスク</span>
+      </label>
+    </div>
+    <div class="form-group">
+      <label class="event-checkbox-label">
+        <input type="checkbox" id="badge-future">
+        <span>未来の未完了タスク</span>
+      </label>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:6px 0 16px;">
+    <div class="form-group">
+      <label class="event-checkbox-label">
+        <input type="checkbox" id="badge-include-events">
+        <span>「予定」になっているTODOも含める</span>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="badge-save-btn">保存する</button>
+      <button class="btn-secondary" id="badge-cancel-btn">キャンセル</button>
     </div>
   </div>
 </div>

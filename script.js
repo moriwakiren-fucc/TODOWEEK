@@ -119,9 +119,10 @@ const FAV_REMIND_LABELS = {
 };
 
 function getColor(subject) {
-  if (!subject || subject === 'なし') return DEFAULT_COLOR;
+  // 「なし」「カスタム」も「科目と色」で設定した色を優先し、未設定なら標準色
+  if (!subject || subject === 'なし') return SUBJECT_COLORS['なし'] || DEFAULT_COLOR;
   if (SUBJECT_COLORS[subject]) return SUBJECT_COLORS[subject];
-  return CUSTOM_COLOR;
+  return SUBJECT_COLORS['カスタム'] || CUSTOM_COLOR;
 }
 
 const FG_PALETTE = [
@@ -413,22 +414,55 @@ async function registerServiceWorker() {
   } catch(e) { console.error('SW registration failed:', e); return null; }
 }
 
-// ── APP BADGE（ホーム画面アイコンのバッジ＝期日を過ぎた未完了タスク数） ──
+// ── APP BADGE（ホーム画面アイコンのバッジ＝設定した条件に合う未完了タスク数） ──
 // Service Worker は localStorage に触れないため、IndexedDB に共有する
 const BADGE_DB_NAME  = 'todoweek-badge';
 const BADGE_STORE    = 'state';
 const BADGE_KEY      = 'overdueCount';   // 画面側が最後に計算した「期限切れ未完了数」
-const BADGE_DATES_KEY = 'pendingDates';  // 未完了（予定除く）タスクの日付一覧。SW が当日基準で再計算する用
+const BADGE_DATES_KEY = 'pendingDates';  // バッジの対象になりうる未完了タスクの日付一覧。SW が当日基準で再計算する用
+const BADGE_CONFIG_KEY = 'badgeConfig';  // バッジの設定（SW が再計算に使う）
 
-// 未完了（予定は除く）タスクの日付一覧
-function getPendingDates() {
-  return tasks.filter(t => !t.isEvent && !t.done).map(t => t.date);
+// バッジの設定（アカウントごとに KV の subjectSettings_ へ同期）
+//  past=過去（今日より前） / today=今日 / future=未来（今日より後） / includeEvents=「予定」も数える
+// ※「過去」「未来」に「今日」は含まれない
+const BADGE_SETTINGS_KEY = 'todoweek_badge_settings_v1';
+const BADGE_DEFAULT = { past: true, today: false, future: false, includeEvents: false };
+function normalizeBadgeSettings(o) {
+  const b = { ...BADGE_DEFAULT };
+  if (o && typeof o === 'object') {
+    Object.keys(BADGE_DEFAULT).forEach(k => { if (typeof o[k] === 'boolean') b[k] = o[k]; });
+  }
+  return b;
+}
+let badgeSettings = (() => {
+  try { return normalizeBadgeSettings(JSON.parse(localStorage.getItem(BADGE_SETTINGS_KEY))); }
+  catch (e) { return { ...BADGE_DEFAULT }; }
+})();
+function saveBadgeSettings(o, fromCloud) {
+  badgeSettings = normalizeBadgeSettings(o);
+  localStorage.setItem(BADGE_SETTINGS_KEY, JSON.stringify(badgeSettings));
+  if (!fromCloud) markSubjectDirty(); // 科目設定と同じ経路でクラウドへ同期
 }
 
-// 期日を過ぎた未完了タスク数（renderOverdue と同じ判定：date < 今日）
-function countOverdueTasks() {
+// 日付が、設定でオンになっている区分（過去／今日／未来）に当たるか
+function badgeDateMatches(dateStr, b, today) {
+  if (typeof dateStr !== 'string') return false;
+  if (dateStr < today) return b.past;
+  if (dateStr > today) return b.future;
+  return b.today;
+}
+
+// バッジの対象になりうる未完了タスクの日付一覧（予定は「予定も含める」がオンのときだけ）
+function getPendingDates() {
+  return tasks.filter(t => !t.done && (!t.isEvent || badgeSettings.includeEvents)).map(t => t.date);
+}
+
+// バッジに表示する数：未完了で、設定した区分に当たるタスクの合計
+function countBadgeTasks() {
   const today = getTodayStr();
-  return tasks.filter(t => !t.isEvent && !t.done && t.date < today).length;
+  return tasks.filter(t =>
+    !t.done && (!t.isEvent || badgeSettings.includeEvents) && badgeDateMatches(t.date, badgeSettings, today)
+  ).length;
 }
 
 // IndexedDB に保存（SW の push 時に使う）。失敗しても無視
@@ -446,6 +480,7 @@ function saveBadgeState(count, dates) {
           const st = tx.objectStore(BADGE_STORE);
           st.put(count, BADGE_KEY);
           st.put(dates, BADGE_DATES_KEY);
+          st.put({ ...badgeSettings }, BADGE_CONFIG_KEY);
           tx.oncomplete = () => { db.close(); resolve(); };
           tx.onerror = tx.onabort = () => { db.close(); resolve(); };
         } catch (e) { resolve(); }
@@ -499,7 +534,7 @@ function saveSyncState(dirty) {
 // バッジ更新本体。非対応環境・例外でもアプリを止めない（常に resolve する）
 async function updateAppBadge() {
   try {
-    const count = countOverdueTasks();
+    const count = countBadgeTasks();
     if ('setAppBadge' in navigator) {
       try {
         if (count > 0) await navigator.setAppBadge(count);
@@ -513,6 +548,34 @@ async function updateAppBadge() {
     console.warn('updateAppBadge error:', e);
   }
 }
+
+// ── バッジの設定モーダル ──
+function openBadgeModal() {
+  document.getElementById('badge-past').checked           = !!badgeSettings.past;
+  document.getElementById('badge-today').checked          = !!badgeSettings.today;
+  document.getElementById('badge-future').checked         = !!badgeSettings.future;
+  document.getElementById('badge-include-events').checked = !!badgeSettings.includeEvents;
+  document.getElementById('badge-modal-overlay').classList.add('open');
+}
+function closeBadgeModal() {
+  document.getElementById('badge-modal-overlay').classList.remove('open');
+}
+document.getElementById('badge-save-btn').addEventListener('click', () => {
+  saveBadgeSettings({
+    past:          document.getElementById('badge-past').checked,
+    today:         document.getElementById('badge-today').checked,
+    future:        document.getElementById('badge-future').checked,
+    includeEvents: document.getElementById('badge-include-events').checked,
+  });
+  updateAppBadge();
+  closeBadgeModal();
+  showToast('バッジの設定を保存しました ✓');
+});
+document.getElementById('badge-cancel-btn').addEventListener('click', closeBadgeModal);
+document.getElementById('badge-modal-close').addEventListener('click', closeBadgeModal);
+document.getElementById('badge-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeBadgeModal();
+});
 
 // ── VAPID KEY ──
 async function getVapidPublicKey() {
@@ -1437,6 +1500,12 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
     openSubjectColorModal();
   });
 
+  // バッジの設定
+  document.getElementById('settings-badge').addEventListener('click', () => {
+    menu.classList.remove('open');
+    openBadgeModal();
+  });
+
   // 通知設定
   document.getElementById('settings-notif').addEventListener('click', () => {
     menu.classList.remove('open');
@@ -1900,7 +1969,8 @@ function renderSubjectColorList() {
 
   // なし・カスタム
   FIXED.forEach(subj => {
-    const c = subj === 'なし' ? DEFAULT_COLOR : CUSTOM_COLOR;
+    // 保存済みの色があればそれを表示（無いと開くたびに標準色へ戻り、保存で上書きされてしまう）
+    const c = SUBJECT_COLORS[subj] || (subj === 'なし' ? DEFAULT_COLOR : CUSTOM_COLOR);
     list.appendChild(makeSubjectColorRow(subj, c, false));
   });
 
@@ -2076,14 +2146,14 @@ document.getElementById('subject-color-modal-overlay').addEventListener('click',
 // ── 科目設定のクラウド同期 ──
 async function pushSubjectSettingsToCloud() {
   if (!config.userId || !navigator.onLine) return false;
-  const body = JSON.stringify({ colors: SUBJECT_COLORS, list: subjectList });
+  const body = JSON.stringify({ colors: SUBJECT_COLORS, list: subjectList, badge: badgeSettings });
   try {
     const r = await fetch(`${WORKER_URL}/subject-settings/${config.userId}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body,
     });
     if (!r.ok) throw new Error(r.status);
     // 送信中に設定が変わっていなければ「未同期」を解除
-    if (body === JSON.stringify({ colors: SUBJECT_COLORS, list: subjectList })) {
+    if (body === JSON.stringify({ colors: SUBJECT_COLORS, list: subjectList, badge: badgeSettings })) {
       localStorage.removeItem(SUBJECT_DIRTY_KEY);
     }
     return true;
@@ -2104,6 +2174,7 @@ async function pullSubjectSettingsFromCloud() {
     const data = await r.json();
     if (data.colors) { saveSubjectColors(data.colors); }
     if (Array.isArray(data.list)) { saveSubjectList(data.list, true); }
+    if (data.badge && typeof data.badge === 'object') { saveBadgeSettings(data.badge, true); updateAppBadge(); }
     rebuildSubjectSelects();
   } catch(e) { console.warn('subject settings pull failed', e); }
 }
