@@ -151,6 +151,13 @@ export default {
       });
     }
 
+    // GET /version … Workerの版の確認用（タスクの統合保存に対応していれば taskMerge:true）
+    if (path === '/version' && request.method === 'GET') {
+      return new Response(JSON.stringify({ version: '13.1', taskMerge: true }), {
+        headers: { ...CORS, 'Content-Type': 'application/json' },
+      });
+    }
+
     // GET /vapidPublicKey
     if (path === '/vapidPublicKey' && request.method === 'GET') {
       return new Response(JSON.stringify({ key: env.VAPID_PUBLIC_KEY }), {
