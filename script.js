@@ -9,19 +9,12 @@ const VERSION_KEY       = 'todoweek_version_v1';
 const DEFAULT_KEY       = 'todoweek_default_v1';
 const SUBJECT_COLOR_KEY = 'todoweek_subject_colors_v1';
 const VERSION_URL       = 'https://moriwakiren-fucc.github.io/TODOWEEK/version.json';
-const TOMB_KEY          = 'todoweek_tombstones_v1';    // 削除済みタスクの「墓標」（同期で復活させないため）
-const REV_KEY           = 'todoweek_rev_v1';           // ローカル変更の通し番号（Service Workerとの競合判定用）
-const SUBJECT_DIRTY_KEY = 'todoweek_subject_dirty_v1'; // 科目設定に未同期の変更があるか
-const SYNC_STATE_KEY    = 'syncState';                 // IndexedDB（SW共有）に保存する同期状態のキー
-const TOMB_TTL_MS       = 30 * 86400000;               // 墓標を保持する期間（30日）
 
 // ── STATE ──
 let config = {};
 try { config = JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch(e) {}
 let tasks = [];
 try { tasks = JSON.parse(localStorage.getItem(TASKS_KEY)) || []; } catch(e) {}
-let tombstones = []; // 削除済みタスク [{id, deleted:true, updatedAt}]。画面には出さず同期にだけ使う
-try { tombstones = JSON.parse(localStorage.getItem(TOMB_KEY)) || []; } catch(e) {}
 
 let syncTimer      = null;
 let editingId      = null;
@@ -119,10 +112,9 @@ const FAV_REMIND_LABELS = {
 };
 
 function getColor(subject) {
-  // 「なし」「カスタム」も「科目と色」で設定した色を優先し、未設定なら標準色
-  if (!subject || subject === 'なし') return SUBJECT_COLORS['なし'] || DEFAULT_COLOR;
+  if (!subject || subject === 'なし') return DEFAULT_COLOR;
   if (SUBJECT_COLORS[subject]) return SUBJECT_COLORS[subject];
-  return SUBJECT_COLORS['カスタム'] || CUSTOM_COLOR;
+  return CUSTOM_COLOR;
 }
 
 const FG_PALETTE = [
@@ -190,180 +182,178 @@ function setSyncUI(state, label) {
   document.getElementById('sync-label').textContent = label;
 }
 
-// ── タスク統合（マージ）ロジック ──
-// 各タスクは updatedAt(ms) を持ち、同じIDなら新しい方を採用する（タスク単位の last-write-wins）。
-// 削除は {id, deleted:true, updatedAt} の「墓標」として残し、同期で復活しないようにする。
-// ※ worker.js の mergeTasks と同じ規則。同時刻なら incoming（後から渡した側）を優先する。
-function touchTask(task) { task.updatedAt = Date.now(); return task; }
-
-function getSyncPayload() { return [...tasks, ...tombstones]; }
-
-function mergeTasks(base, incoming) {
-  const map = new Map();
-  (base || []).forEach(t => { if (t && t.id) map.set(t.id, t); });
-  (incoming || []).forEach(t => {
-    if (!t || !t.id) return;
-    const cur = map.get(t.id);
-    if (!cur || (t.updatedAt || 0) >= (cur.updatedAt || 0)) map.set(t.id, t);
-  });
-  return [...map.values()];
-}
-
-function tasksDiffer(a, b) {
-  const sig = arr => {
-    const m = new Map();
-    (arr || []).forEach(t => { if (t && t.id) m.set(t.id, JSON.stringify(t)); });
-    return m;
-  };
-  const ma = sig(a), mb = sig(b);
-  if (ma.size !== mb.size) return true;
-  for (const [id, v] of ma) if (mb.get(id) !== v) return true;
-  return false;
-}
-
-function persistLocal() {
-  localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-  localStorage.setItem(TOMB_KEY,  JSON.stringify(tombstones));
-}
-
-// 統合結果を tasks（表示用）と tombstones（墓標）に振り分けて保存。古すぎる墓標は捨てる
-function applyMergedTasks(arr) {
-  const now = Date.now();
-  tasks = arr.filter(t => t && t.id && !t.deleted);
-  tombstones = arr
-    .filter(t => t && t.id && t.deleted && now - (t.updatedAt || 0) < TOMB_TTL_MS)
-    .map(t => ({ id: t.id, deleted: true, updatedAt: t.updatedAt || 0 }));
-  persistLocal();
-}
-
-function addTombstone(id) {
-  tombstones = tombstones.filter(t => t.id !== id);
-  tombstones.push({ id, deleted: true, updatedAt: Date.now() });
-}
-
-function getRev()  { return Number(localStorage.getItem(REV_KEY)) || 0; }
-function bumpRev() { localStorage.setItem(REV_KEY, String(getRev() + 1)); }
-
-// Android(Chrome)など Background Sync 対応環境では、復帰時に Service Worker が同期する。
-// iOS は非対応なので何も起きない（代わりに通知受信時に sw.js が同期する）
-function registerBackgroundSync() {
-  try {
-    if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.ready
-      .then(reg => (reg.sync ? reg.sync.register('todoweek-sync') : null))
-      .catch(() => {});
-  } catch (e) {}
-}
-
-// Service Worker がバックグラウンドで同期した結果を取り込む
-async function reconcileWithSW() {
-  try {
-    const st = await idbGetState(SYNC_STATE_KEY);
-    if (!st || st.userId !== config.userId || !Array.isArray(st.tasks)) return;
-    // 端末側(incoming)を優先しつつ、SWが他端末分を取り込んで新しくなった分は拾う
-    const merged = mergeTasks(st.tasks, getSyncPayload());
-    if (tasksDiffer(merged, getSyncPayload())) applyMergedTasks(merged);
-    // SWが最新の変更まで送信済みなら、未同期フラグを下ろす
-    if (st.dirty === false && st.rev === getRev()) localStorage.removeItem(PENDING_KEY);
-  } catch (e) { console.warn('reconcileWithSW failed', e); }
-}
-
-// 戻り値：同期に成功したら true
 async function pushToCloud() {
-  if (!config.userId) return false;
+  if (!config.userId) return;
   if (!navigator.onLine) {
     // オフライン：未同期フラグを立てておく
     localStorage.setItem(PENDING_KEY, '1');
     setSyncUI('err', 'オフライン');
-    registerBackgroundSync();
-    return false;
+    return;
+  }
+  const res = await runTaskSync(true);
+  // 他端末の追加分を取り込んだ場合は画面にも反映
+  if (res.changed) { render(); updateAppBadge(); }
+  return res.ok;
+}
+
+// ── タスクのマージ同期 ──
+// 以前は「配列まるごと上書き(PUT)」だったため、オフライン編集や複数端末の編集で
+// 「後から送った側」が相手の追加分を消していた。
+// 今は送る前に必ずクラウドを取得し、タスクIDごとにマージ（3-way）してから送る。
+//   ・片方にだけある  → 追加として両方に残す（最後の同期時点に存在していた場合のみ「削除」とみなす）
+//   ・両方にある      → 最後の同期以降に変更した側を採用（両方変更なら updatedAt が新しい方）
+const BASE_KEY = 'todoweek_sync_base_v1'; // 最後に同期できた時点の { タスクID: 内容の署名 }
+
+function stableStringify(v) {
+  if (Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']';
+  if (v && typeof v === 'object') {
+    return '{' + Object.keys(v).filter(k => v[k] !== undefined).sort()
+      .map(k => JSON.stringify(k) + ':' + stableStringify(v[k])).join(',') + '}';
+  }
+  return JSON.stringify(v);
+}
+function taskSig(t) { const { updatedAt, ...rest } = t; return stableStringify(rest); }
+
+function loadSyncBase() {
+  try { const b = JSON.parse(localStorage.getItem(BASE_KEY)); return (b && typeof b === 'object') ? b : null; }
+  catch(e) { return null; }
+}
+function saveSyncBase(list) {
+  const b = {};
+  list.forEach(t => { if (t && t.id) b[t.id] = taskSig(t); });
+  try { localStorage.setItem(BASE_KEY, JSON.stringify(b)); } catch(e) {}
+}
+
+// 最後の同期以降に変更されたタスクへ updatedAt を付与（編集箇所を個別に直さず schedulePush で一括検出）
+function stampLocalChanges() {
+  const base = loadSyncBase();
+  if (!base) return;
+  const now = Date.now();
+  tasks.forEach(t => { if (t && t.id && base[t.id] !== taskSig(t)) t.updatedAt = now; });
+}
+
+function sameTaskSet(a, b) {
+  if (a.length !== b.length) return false;
+  const m = new Map(b.map(t => [t.id, taskSig(t)]));
+  return a.every(t => m.get(t.id) === taskSig(t));
+}
+
+function pickTask(lt, rt, base, preferLocalOnTie) {
+  const ls = taskSig(lt), rs = taskSig(rt);
+  const lu = lt.updatedAt || 0, ru = rt.updatedAt || 0;
+  if (ls === rs) return lu >= ru ? lt : rt;
+  if (base && base[lt.id] !== undefined) {
+    if (ls === base[lt.id]) return rt;   // ローカル未変更 → 他端末の変更を採用
+    if (rs === base[lt.id]) return lt;   // クラウド未変更 → ローカルの変更を採用
+  }
+  if (lu !== ru) return lu > ru ? lt : rt; // 両方変更 → 新しい方
+  return preferLocalOnTie ? lt : rt;
+}
+
+function mergeTasks(local, remote, base, preferLocalOnTie) {
+  const L = new Map(local.filter(t => t && t.id).map(t => [t.id, t]));
+  const R = new Map(remote.filter(t => t && t.id).map(t => [t.id, t]));
+  const out = [];
+  local.forEach(lt => {
+    if (!lt || !lt.id) { out.push(lt); return; }
+    const rt = R.get(lt.id);
+    if (!rt) {
+      if (base && lt.id in base) return;   // 他端末で削除された
+      out.push(lt);                        // ローカルで新規追加（オフライン分など）
+      return;
+    }
+    out.push(pickTask(lt, rt, base, preferLocalOnTie));
+  });
+  remote.forEach(rt => {
+    if (!rt || !rt.id || L.has(rt.id)) return;
+    if (base && rt.id in base) return;     // ローカルで削除した
+    out.push(rt);                          // 他端末で新規追加
+  });
+  return out;
+}
+
+// 取得 → マージ → 差分があれば送信。同時実行は直列化（取りこぼし防止）
+let taskSyncChain = Promise.resolve();
+function runTaskSync(markPendingOnError) {
+  const p = taskSyncChain.then(() => syncTasksWithCloud(markPendingOnError));
+  taskSyncChain = p.catch(() => {});
+  return p;
+}
+
+async function syncTasksWithCloud(markPendingOnError) {
+  if (!config.userId) return { ok: false, changed: false };
+  if (!navigator.onLine) {
+    localStorage.setItem(PENDING_KEY, '1');
+    setSyncUI('err', 'オフライン');
+    return { ok: false, changed: false };
   }
   setSyncUI('syncing', '同期中…');
-  const revAtStart = getRev();
+  let putStage = false;
   try {
-    const r = await fetch(`${WORKER_URL}/tasks/${config.userId}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(getSyncPayload()),
-    });
+    const r = await fetch(`${WORKER_URL}/tasks/${config.userId}`);
     if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    const remote = (Array.isArray(data) ? data : []).filter(t => t && t.id);
+    const pending = !!localStorage.getItem(PENDING_KEY);
+    // クラウドが空なのに「削除された」と判断すると全消えになるため、その場合は base を使わず和集合にする
+    const base = remote.length ? loadSyncBase() : null;
 
-    // Worker は統合済みの全タスクを返す（旧Workerは 'OK' を返すので、その場合は無視）
-    let serverMerged = null;
-    try { const j = await r.json(); if (Array.isArray(j)) serverMerged = j; } catch (e) {}
-    if (serverMerged) {
-      const before = getSyncPayload();
-      // 送信中に端末側で行った編集も失わないよう、現在のローカルとも統合する
-      const next = mergeTasks(before, serverMerged);
-      const changed = tasksDiffer(before, next);
-      applyMergedTasks(next);
-      if (changed) { if (!dragTask) render(); updateAppBadge(); }
-    }
+    // ↓ ここから await を挟まず tasks を読んで置き換える（同期中の編集を上書きしない）
+    const before = tasks;
+    const merged = mergeTasks(before, remote, base, pending);
+    const changed = !sameTaskSet(before, merged);
+    tasks = merged;
+    localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
 
-    // 送信中に新しい編集がなければ「同期済み」にする
-    if (getRev() === revAtStart) {
-      localStorage.removeItem(PENDING_KEY);
-      await saveSyncState(false);
+    if (!sameTaskSet(merged, remote)) {
+      putStage = true;
+      const p = await fetch(`${WORKER_URL}/tasks/${config.userId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged),
+      });
+      if (!p.ok) throw new Error(p.status);
     }
+    saveSyncBase(merged);
+    // 送信中にさらに編集された場合は未同期フラグを残す
+    if (sameTaskSet(tasks, merged)) localStorage.removeItem(PENDING_KEY);
     setSyncUI('ok', '同期済み ✓');
-    return true;
+    return { ok: true, changed };
   } catch(e) {
-    localStorage.setItem(PENDING_KEY, '1');
+    if (markPendingOnError || putStage) localStorage.setItem(PENDING_KEY, '1');
     setSyncUI('err', 'エラー');
-    registerBackgroundSync();
-    return false;
+    return { ok: false, changed: false };
   }
 }
 
 async function pullFromCloud() {
   if (!config.userId) { setSyncUI('', '未設定'); return; }
-  await reconcileWithSW();
   if (!navigator.onLine) {
     // オフライン：localStorageのデータをそのまま使う
     setSyncUI('err', 'オフライン');
-    render(); updateAppBadge();
+    render();
     return;
   }
   setSyncUI('syncing', '読込中…');
-  try {
-    const r = await fetch(`${WORKER_URL}/tasks/${config.userId}`);
-    if (!r.ok) throw new Error(r.status);
-    const data = await r.json();
-    let ok = true;
-    if (Array.isArray(data)) {
-      const pending = !!localStorage.getItem(PENDING_KEY);
-      let local = getSyncPayload();
-      if (!pending) {
-        // 旧仕様（クラウド優先）の名残への対処：
-        // 更新時刻が無く、クラウドにも存在しない端末内タスクは、他端末で削除済みとみなして捨てる
-        const cloudIds = new Set(data.filter(t => t && t.id).map(t => t.id));
-        local = local.filter(t => (t.updatedAt || 0) > 0 || cloudIds.has(t.id));
-      }
-      // クラウドと端末をタスク単位で統合（新しい更新が勝つ）
-      const merged = mergeTasks(local, data);
-      applyMergedTasks(merged);
-      // 端末側にだけある／より新しい変更があればクラウドへ反映
-      if (pending || tasksDiffer(merged, data)) ok = await pushToCloud();
-      else await saveSyncState(false);
+  // タスクはマージ同期（オフライン中の追加と他端末の追加を両方残す）
+  const res = await runTaskSync(false);
+  if (res.ok) {
+    try {
+      await pullFavoritesFromCloud();
+      await pullSubjectSettingsFromCloud();
+    } catch(e) {
+      setSyncUI('err', 'エラー');
     }
-    if (ok) setSyncUI('ok', '同期済み ✓');
-    await pullFavoritesFromCloud();
-    await pullSubjectSettingsFromCloud();
-    render();
-    updateAppBadge(); // 他端末の変更でタスクが置き換わるため
-  } catch(e) {
-    setSyncUI('err', 'エラー');
-    render(); // エラーでもローカルデータで表示
   }
+  render(); // エラーでもローカルデータで表示
+  updateAppBadge(); // 他端末の変更でタスクが置き換わるため
 }
 
 function schedulePush() {
-  persistLocal();
-  bumpRev();
-  saveSyncState(true); // Service Worker が通知受信時に同期できるよう IndexedDB にも保存
+  stampLocalChanges();
+  localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
   if (!navigator.onLine) {
     localStorage.setItem(PENDING_KEY, '1');
     setSyncUI('err', 'オフライン（復帰時に同期）');
-    registerBackgroundSync();
     return;
   }
   clearTimeout(syncTimer);
@@ -414,55 +404,22 @@ async function registerServiceWorker() {
   } catch(e) { console.error('SW registration failed:', e); return null; }
 }
 
-// ── APP BADGE（ホーム画面アイコンのバッジ＝設定した条件に合う未完了タスク数） ──
+// ── APP BADGE（ホーム画面アイコンのバッジ＝期日を過ぎた未完了タスク数） ──
 // Service Worker は localStorage に触れないため、IndexedDB に共有する
 const BADGE_DB_NAME  = 'todoweek-badge';
 const BADGE_STORE    = 'state';
 const BADGE_KEY      = 'overdueCount';   // 画面側が最後に計算した「期限切れ未完了数」
-const BADGE_DATES_KEY = 'pendingDates';  // バッジの対象になりうる未完了タスクの日付一覧。SW が当日基準で再計算する用
-const BADGE_CONFIG_KEY = 'badgeConfig';  // バッジの設定（SW が再計算に使う）
+const BADGE_DATES_KEY = 'pendingDates';  // 未完了（予定除く）タスクの日付一覧。SW が当日基準で再計算する用
 
-// バッジの設定（アカウントごとに KV の subjectSettings_ へ同期）
-//  past=過去（今日より前） / today=今日 / future=未来（今日より後） / includeEvents=「予定」も数える
-// ※「過去」「未来」に「今日」は含まれない
-const BADGE_SETTINGS_KEY = 'todoweek_badge_settings_v1';
-const BADGE_DEFAULT = { past: true, today: false, future: false, includeEvents: false };
-function normalizeBadgeSettings(o) {
-  const b = { ...BADGE_DEFAULT };
-  if (o && typeof o === 'object') {
-    Object.keys(BADGE_DEFAULT).forEach(k => { if (typeof o[k] === 'boolean') b[k] = o[k]; });
-  }
-  return b;
-}
-let badgeSettings = (() => {
-  try { return normalizeBadgeSettings(JSON.parse(localStorage.getItem(BADGE_SETTINGS_KEY))); }
-  catch (e) { return { ...BADGE_DEFAULT }; }
-})();
-function saveBadgeSettings(o, fromCloud) {
-  badgeSettings = normalizeBadgeSettings(o);
-  localStorage.setItem(BADGE_SETTINGS_KEY, JSON.stringify(badgeSettings));
-  if (!fromCloud) markSubjectDirty(); // 科目設定と同じ経路でクラウドへ同期
-}
-
-// 日付が、設定でオンになっている区分（過去／今日／未来）に当たるか
-function badgeDateMatches(dateStr, b, today) {
-  if (typeof dateStr !== 'string') return false;
-  if (dateStr < today) return b.past;
-  if (dateStr > today) return b.future;
-  return b.today;
-}
-
-// バッジの対象になりうる未完了タスクの日付一覧（予定は「予定も含める」がオンのときだけ）
+// 未完了（予定は除く）タスクの日付一覧
 function getPendingDates() {
-  return tasks.filter(t => !t.done && (!t.isEvent || badgeSettings.includeEvents)).map(t => t.date);
+  return tasks.filter(t => !t.isEvent && !t.done).map(t => t.date);
 }
 
-// バッジに表示する数：未完了で、設定した区分に当たるタスクの合計
-function countBadgeTasks() {
+// 期日を過ぎた未完了タスク数（renderOverdue と同じ判定：date < 今日）
+function countOverdueTasks() {
   const today = getTodayStr();
-  return tasks.filter(t =>
-    !t.done && (!t.isEvent || badgeSettings.includeEvents) && badgeDateMatches(t.date, badgeSettings, today)
-  ).length;
+  return tasks.filter(t => !t.isEvent && !t.done && t.date < today).length;
 }
 
 // IndexedDB に保存（SW の push 時に使う）。失敗しても無視
@@ -480,7 +437,6 @@ function saveBadgeState(count, dates) {
           const st = tx.objectStore(BADGE_STORE);
           st.put(count, BADGE_KEY);
           st.put(dates, BADGE_DATES_KEY);
-          st.put({ ...badgeSettings }, BADGE_CONFIG_KEY);
           tx.oncomplete = () => { db.close(); resolve(); };
           tx.onerror = tx.onabort = () => { db.close(); resolve(); };
         } catch (e) { resolve(); }
@@ -489,52 +445,10 @@ function saveBadgeState(count, dates) {
   });
 }
 
-// ── IndexedDB（Service Worker と共有する同期状態） ──
-// SW は localStorage を読めないため、未同期タスクの写しをここに置く。
-// 値: { userId, workerUrl, tasks(墓標を含む全件), dirty, rev }
-function idbOpenState() {
-  return new Promise((resolve, reject) => {
-    if (!('indexedDB' in window)) return reject(new Error('no indexedDB'));
-    const req = indexedDB.open(BADGE_DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(BADGE_STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror   = () => reject(req.error);
-  });
-}
-async function idbPutState(key, val) {
-  try {
-    const db = await idbOpenState();
-    await new Promise(resolve => {
-      const tx = db.transaction(BADGE_STORE, 'readwrite');
-      tx.objectStore(BADGE_STORE).put(val, key);
-      tx.oncomplete = () => { db.close(); resolve(); };
-      tx.onerror = tx.onabort = () => { db.close(); resolve(); };
-    });
-  } catch (e) {}
-}
-async function idbGetState(key) {
-  try {
-    const db = await idbOpenState();
-    return await new Promise(resolve => {
-      const req = db.transaction(BADGE_STORE, 'readonly').objectStore(BADGE_STORE).get(key);
-      req.onsuccess = () => { db.close(); resolve(req.result); };
-      req.onerror   = () => { db.close(); resolve(undefined); };
-    });
-  } catch (e) { return undefined; }
-}
-// 書き込み順が入れ替わらないよう直列化する
-let idbChain = Promise.resolve();
-function saveSyncState(dirty) {
-  if (!config.userId) return Promise.resolve();
-  const state = { userId: config.userId, workerUrl: WORKER_URL, tasks: getSyncPayload(), dirty: !!dirty, rev: getRev() };
-  idbChain = idbChain.then(() => idbPutState(SYNC_STATE_KEY, state));
-  return idbChain;
-}
-
 // バッジ更新本体。非対応環境・例外でもアプリを止めない（常に resolve する）
 async function updateAppBadge() {
   try {
-    const count = countBadgeTasks();
+    const count = countOverdueTasks();
     if ('setAppBadge' in navigator) {
       try {
         if (count > 0) await navigator.setAppBadge(count);
@@ -548,34 +462,6 @@ async function updateAppBadge() {
     console.warn('updateAppBadge error:', e);
   }
 }
-
-// ── バッジの設定モーダル ──
-function openBadgeModal() {
-  document.getElementById('badge-past').checked           = !!badgeSettings.past;
-  document.getElementById('badge-today').checked          = !!badgeSettings.today;
-  document.getElementById('badge-future').checked         = !!badgeSettings.future;
-  document.getElementById('badge-include-events').checked = !!badgeSettings.includeEvents;
-  document.getElementById('badge-modal-overlay').classList.add('open');
-}
-function closeBadgeModal() {
-  document.getElementById('badge-modal-overlay').classList.remove('open');
-}
-document.getElementById('badge-save-btn').addEventListener('click', () => {
-  saveBadgeSettings({
-    past:          document.getElementById('badge-past').checked,
-    today:         document.getElementById('badge-today').checked,
-    future:        document.getElementById('badge-future').checked,
-    includeEvents: document.getElementById('badge-include-events').checked,
-  });
-  updateAppBadge();
-  closeBadgeModal();
-  showToast('バッジの設定を保存しました ✓');
-});
-document.getElementById('badge-cancel-btn').addEventListener('click', closeBadgeModal);
-document.getElementById('badge-modal-close').addEventListener('click', closeBadgeModal);
-document.getElementById('badge-modal-overlay').addEventListener('click', function(e) {
-  if (e.target === this) closeBadgeModal();
-});
 
 // ── VAPID KEY ──
 async function getVapidPublicKey() {
@@ -876,7 +762,7 @@ function makeTaskEl(task, isOverdue = false) {
   cb.addEventListener('click', e => {
     e.stopPropagation();
     if (task.isEvent) return; // 予定タスクは完了不可
-    task.done = !task.done; touchTask(task); schedulePush(); render(); updateAppBadge();
+    task.done = !task.done; schedulePush(); render(); updateAppBadge();
   });
 
   const lbl = document.createElement('div'); lbl.className = 'task-label';
@@ -1291,7 +1177,6 @@ function openModal(id, dateStr) {
   currentDateStr = dateStr || getTodayStr();
   editingId = id || null;
   const isEdit = !!id;
-  rebuildSubjectSelects(); // 保存済みの科目リストでプルダウンを作り直す
   document.getElementById('modal-title-text').textContent = isEdit ? '編集' : '新規作成';
   document.getElementById('f-date-group').style.display = isEdit ? 'block' : 'none';
   document.getElementById('custom-subject-group').style.display = 'none';
@@ -1312,7 +1197,7 @@ function openModal(id, dateStr) {
       ? t.notifications
       : getNotifsArray(t); // 後方互換変換
     buildNotifTimesList(existingNotifs, 'f-notif-time-group');
-    const presets = getPresetSubjects();
+    const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
     if (presets.includes(t.subject)) {
       document.getElementById('f-subject').value = t.subject;
     } else if (t.subject) {
@@ -1334,7 +1219,7 @@ function openModal(id, dateStr) {
     document.getElementById('f-is-event').checked = !!taskDefault.isEvent;
     // デフォルト教科
     const defSubj = taskDefault.subject || 'なし';
-    const presets = getPresetSubjects();
+    const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
     if (presets.includes(defSubj)) {
       document.getElementById('f-subject').value = defSubj;
       document.getElementById('custom-subject-group').style.display = 'none';
@@ -1393,7 +1278,7 @@ function saveTask() {
     const i = tasks.findIndex(t => t.id === editingId);
     if (i >= 0) {
       const prev    = tasks[i];
-      const updated = { ...prev, title, date:finalDate, remind, isEvent, notifications, subject, format, updatedAt: Date.now() };
+      const updated = { ...prev, title, date:finalDate, remind, isEvent, notifications, subject, format };
       if (!isEvent) { if (updated.done === undefined) updated.done = false; }
       else          { delete updated.done; }
       if (prev.date !== finalDate || prev.remind !== remind) delete updated.colOrder;
@@ -1402,7 +1287,7 @@ function saveTask() {
     }
     showToast('更新しました ✓');
   } else {
-    const newTask = { id:genId(), title, date:finalDate, remind, isEvent, notifications, subject, format, updatedAt: Date.now() };
+    const newTask = { id:genId(), title, date:finalDate, remind, isEvent, notifications, subject, format };
     if (!isEvent) newTask.done = false;
     tasks.push(newTask);
     showToast('追加しました ✓');
@@ -1412,9 +1297,7 @@ function saveTask() {
 
 function deleteTask() {
   if (!editingId || !confirm('この予定を削除しますか？')) return;
-  const delId = editingId;
-  tasks = tasks.filter(t => t.id !== delId);
-  addTombstone(delId); // 他端末・同期で復活しないよう墓標を残す
+  tasks = tasks.filter(t => t.id !== editingId);
   schedulePush(); closeModal(); render(); updateAppBadge(); showToast('削除しました');
 }
 
@@ -1458,10 +1341,9 @@ document.getElementById('setup-skip').addEventListener('click', () => {
 document.getElementById('setup-logout').addEventListener('click', async () => {
   if (!confirm('ログアウトしますか？\nこのデバイスのローカルデータも削除されます。')) return;
   await unsubscribeThisDevice();
-  config = {}; tasks = []; tombstones = [];
+  config = {}; tasks = [];
   localStorage.removeItem(CFG_KEY); localStorage.removeItem(TASKS_KEY);
-  localStorage.removeItem(TOMB_KEY); localStorage.removeItem(PENDING_KEY); localStorage.removeItem(REV_KEY);
-  await idbPutState(SYNC_STATE_KEY, null);
+  localStorage.removeItem(BASE_KEY); localStorage.removeItem(PENDING_KEY);
   document.getElementById('setup-overlay').classList.remove('open');
   setSyncUI('','未設定'); render(); updateAppBadge(); showToast('ログアウトしました');
   setTimeout(showSetup, 400);
@@ -1498,12 +1380,6 @@ document.getElementById('setup-logout').addEventListener('click', async () => {
   document.getElementById('settings-subject-color').addEventListener('click', () => {
     menu.classList.remove('open');
     openSubjectColorModal();
-  });
-
-  // バッジの設定
-  document.getElementById('settings-badge').addEventListener('click', () => {
-    menu.classList.remove('open');
-    openBadgeModal();
   });
 
   // 通知設定
@@ -1564,7 +1440,7 @@ function applyFavToModal(fav) {
   // 予定フラグ
   document.getElementById('f-is-event').checked = !!fav.isEvent;
   // 教科
-  const presets = getPresetSubjects();
+  const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
   if (fav.subject && presets.includes(fav.subject)) {
     document.getElementById('f-subject').value = fav.subject;
     document.getElementById('custom-subject-group').style.display = 'none';
@@ -1603,12 +1479,11 @@ function openFavModal(favId) {
   } else {
     // 編集フォーム表示
     listSec.style.display = 'none'; editSec.style.display = '';
-    rebuildSubjectSelects();
     const fav = favorites.find(f => f.id === favId) || {};
     document.getElementById('fav-f-title').value   = fav.title || '';
     document.getElementById('fav-f-remind').value  = fav.remind || '0';
     document.getElementById('fav-f-is-event').checked = !!fav.isEvent;
-    const presets = getPresetSubjects();
+    const presets = ['なし','国語','数学','英語','化学','物理','生物','地理','日本史','世界史','情報'];
     if (fav.subject && presets.includes(fav.subject)) {
       document.getElementById('fav-f-subject').value = fav.subject;
       document.getElementById('fav-custom-subject-group').style.display = 'none';
@@ -1848,7 +1723,6 @@ async function safeCacheClean() {
     try {
       await pushToCloud();
       await pushFavoritesToCloud();
-      await pushSubjectSettingsToCloud();
     } catch(e) {
       alert('インターネットに接続してから再度お試しください');
       return;
@@ -1894,7 +1768,6 @@ let taskDefault = {};
 try { taskDefault = JSON.parse(localStorage.getItem(DEFAULT_KEY)) || {}; } catch(e) {}
 
 function openDefaultModal() {
-  rebuildSubjectSelects();
   const d = taskDefault;
   document.getElementById('def-is-event').checked = !!d.isEvent;
   const allSubjs = ['なし', ...subjectList, 'カスタム'];
@@ -1948,13 +1821,10 @@ let subjectList = (() => {
   try { return JSON.parse(localStorage.getItem(SUBJECT_LIST_KEY)) || [...SUBJECT_LIST_DEFAULT]; }
   catch(e) { return [...SUBJECT_LIST_DEFAULT]; }
 })();
-function saveSubjectList(arr, fromCloud) {
+function saveSubjectList(arr) {
   subjectList = arr;
   localStorage.setItem(SUBJECT_LIST_KEY, JSON.stringify(arr));
-  if (!fromCloud) markSubjectDirty(); // 追加・削除・並べ替えもクラウドへ同期する
 }
-// 追加画面などのプルダウンに使う「なし＋現在の科目リスト」
-function getPresetSubjects() { return ['なし', ...subjectList]; }
 
 function openSubjectColorModal() {
   renderSubjectColorList();
@@ -1969,8 +1839,7 @@ function renderSubjectColorList() {
 
   // なし・カスタム
   FIXED.forEach(subj => {
-    // 保存済みの色があればそれを表示（無いと開くたびに標準色へ戻り、保存で上書きされてしまう）
-    const c = SUBJECT_COLORS[subj] || (subj === 'なし' ? DEFAULT_COLOR : CUSTOM_COLOR);
+    const c = subj === 'なし' ? DEFAULT_COLOR : CUSTOM_COLOR;
     list.appendChild(makeSubjectColorRow(subj, c, false));
   });
 
@@ -2128,7 +1997,7 @@ document.getElementById('subject-color-save-btn').addEventListener('click', () =
   });
   saveSubjectColors(customColors);
   // クラウド同期（科目リストも含めて）
-  markSubjectDirty();
+  scheduleSubjectSettingsSync();
   document.getElementById('subject-color-modal-overlay').classList.remove('open');
   render();
   showToast('科目の設定を保存しました ✓');
@@ -2145,36 +2014,23 @@ document.getElementById('subject-color-modal-overlay').addEventListener('click',
 
 // ── 科目設定のクラウド同期 ──
 async function pushSubjectSettingsToCloud() {
-  if (!config.userId || !navigator.onLine) return false;
-  const body = JSON.stringify({ colors: SUBJECT_COLORS, list: subjectList, badge: badgeSettings });
+  if (!config.userId || !navigator.onLine) return;
   try {
-    const r = await fetch(`${WORKER_URL}/subject-settings/${config.userId}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body,
+    await fetch(`${WORKER_URL}/subject-settings/${config.userId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ colors: SUBJECT_COLORS, list: subjectList }),
     });
-    if (!r.ok) throw new Error(r.status);
-    // 送信中に設定が変わっていなければ「未同期」を解除
-    if (body === JSON.stringify({ colors: SUBJECT_COLORS, list: subjectList, badge: badgeSettings })) {
-      localStorage.removeItem(SUBJECT_DIRTY_KEY);
-    }
-    return true;
-  } catch(e) { console.warn('subject settings push failed', e); return false; }
+  } catch(e) { console.warn('subject settings push failed', e); }
 }
 
 async function pullSubjectSettingsFromCloud() {
   if (!config.userId || !navigator.onLine) return;
   try {
-    // 端末側に未同期の変更があるときは、古いクラウド側で上書きせず端末側を送る
-    if (localStorage.getItem(SUBJECT_DIRTY_KEY)) {
-      await pushSubjectSettingsToCloud();
-      rebuildSubjectSelects();
-      return;
-    }
     const r = await fetch(`${WORKER_URL}/subject-settings/${config.userId}`);
     if (!r.ok) return;
     const data = await r.json();
     if (data.colors) { saveSubjectColors(data.colors); }
-    if (Array.isArray(data.list)) { saveSubjectList(data.list, true); }
-    if (data.badge && typeof data.badge === 'object') { saveBadgeSettings(data.badge, true); updateAppBadge(); }
+    if (Array.isArray(data.list)) { saveSubjectList(data.list); }
     rebuildSubjectSelects();
   } catch(e) { console.warn('subject settings pull failed', e); }
 }
@@ -2182,11 +2038,6 @@ async function pullSubjectSettingsFromCloud() {
 function scheduleSubjectSettingsSync() {
   clearTimeout(window._subjectSyncTimer);
   window._subjectSyncTimer = setTimeout(pushSubjectSettingsToCloud, 1500);
-}
-// 科目設定をローカルで変更したとき：未同期フラグを立ててクラウドへ送る
-function markSubjectDirty() {
-  localStorage.setItem(SUBJECT_DIRTY_KEY, '1');
-  scheduleSubjectSettingsSync();
 }
 
 // 科目セレクトを現在の subjectList で再構築
@@ -2235,35 +2086,33 @@ function showToast(msg) {
 // ── INIT ──
 registerServiceWorker();
 getVapidPublicKey();
-rebuildSubjectSelects(); // 起動直後から保存済みの科目リストをプルダウンに反映
 render();
 updateAppBadge();
 updateNotifHeaderBtn();
 if (!config.userId) { showSetup(); } else { pullFromCloud(); }
 checkVersion();
 setInterval(() => { const n=new Date(); if(n.getHours()===0&&n.getMinutes()===0) { render(); updateAppBadge(); } }, 60000);
+let lastForegroundSync = Date.now();
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    updateAppBadge();
-    // アプリを開き直した（復帰した）とき、未同期の変更があれば送る
-    if (config.userId && navigator.onLine) {
-      if (localStorage.getItem(PENDING_KEY)) pushToCloud();
-      if (localStorage.getItem(SUBJECT_DIRTY_KEY)) pushSubjectSettingsToCloud();
-    }
+  if (document.visibilityState !== 'visible') return;
+  updateAppBadge();
+  if (config.userId && navigator.onLine && Date.now() - lastForegroundSync > 30000) {
+    lastForegroundSync = Date.now();
+    pullFromCloud();
   }
 });
 
 // オンライン復帰時に未同期データを自動送信
 window.addEventListener('online', async () => {
   setSyncUI('syncing', '再接続中…');
-  if (config.userId && localStorage.getItem(PENDING_KEY)) {
-    showToast('オンラインに復帰しました。同期中…');
-    const ok = await pushToCloud();
-    if (ok) showToast('同期完了 ✓');
+  if (config.userId) {
+    const hadPending = !!localStorage.getItem(PENDING_KEY);
+    if (hadPending) showToast('オンラインに復帰しました。同期中…');
+    await pullFromCloud(); // クラウドと取得・マージしてから送信
+    if (hadPending && !localStorage.getItem(PENDING_KEY)) showToast('同期完了 ✓');
   } else {
     setSyncUI('ok', '同期済み ✓');
   }
-  if (config.userId && localStorage.getItem(SUBJECT_DIRTY_KEY)) pushSubjectSettingsToCloud();
 });
 
 window.addEventListener('offline', () => {
@@ -2354,9 +2203,7 @@ function endDrag(x, y) {
     if (i >= 0) {
       tasks[i].date = newDate;
       delete tasks[i].colOrder;
-      touchTask(tasks[i]);
       schedulePush();
-      updateAppBadge(); // 日付移動で期限切れ数が変わるため
       showToast(`${newDate} に移動しました`);
     }
   } else if (newDate && newDate === dragTask.date && col) {
@@ -2372,7 +2219,7 @@ function endDrag(x, y) {
     newOrder.splice(insertIdx, 0, dragTask.id);
     newOrder.forEach((id, idx) => {
       const t = tasks.find(obj => obj.id === id);
-      if (t && t.colOrder !== idx) { t.colOrder = idx; touchTask(t); }
+      if (t) t.colOrder = idx;
     });
     schedulePush();
   }
